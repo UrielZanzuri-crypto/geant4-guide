@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="he" dir="rtl" data-course="geant4">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Geant4 צעד אחר צעד</title>
+<meta name="description" content="מדריך אינטראקטיבי בעברית ל-Geant4, ספריית מונטה קרלו להעברת חלקיקים בחומר: צעדים ומסלולים, גיאומטריה וחומרים, רשימות פיזיקה, המקור, מאקרו, ויזואליזציה וניתוח הפלט, עם ממיר הנייטרונים ldns כדוגמה מלווה.">
+<script>try{var t=localStorage.getItem('phy-theme');document.documentElement.setAttribute('data-theme',t||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'))}catch(e){document.documentElement.setAttribute('data-theme','light')}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&family=Rubik:wght@500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar" data-topbar></header>
+
+<main class="wrap-wide">
+  <section class="home-hero" data-home-hero></section>
+
+  <h2>מפת הפרקים</h2>
+  <div data-home-map></div>
+
+  <section class="home-block">
+    <h2>צבעים שנשארים קבועים</h2>
+    <div class="color-legend" aria-label="צבעי החלקיקים">
+      <span class="c-p"><i></i>פרוטון</span>
+      <span class="c-n"><i></i>נייטרון</span>
+      <span class="c-g"><i></i>גמא</span>
+      <span class="c-e"><i></i>אלקטרון</span>
+      <span class="c-vol"><i></i>נפח: גבול ודופן בגיאומטריה</span>
+    </div>
+    <p>לכל חלקיק צבע משלו, בכל ציור ובכל פרק. אלה הצבעים שבהם ה-GUI של Geant4 מצייר את המסלולים בפרויקט שלנו (<code dir="ltr">vis.mac</code>), כך שאחרי כמה דקות מזהים חלקיק לפי הצבע שלו, גם בחלון של Geant4 עצמו. רק הגמא כאן ענבר ולא צהוב, כדי שיהיה קריא גם על רקע בהיר.</p>
+    <p>היחידות באתר הן היחידות הפנימיות של Geant4: אורך ב-mm, זמן ב-ns ואנרגיה ב-MeV. גם האנרגיות של הנייטרונים כתובות ב-MeV.</p>
+  </section>
+
+  <section class="home-block" id="about" data-home-about></section>
+  <section class="home-block" data-home-series></section>
+</main>
+
+<footer data-footer></footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/contrib/auto-render.min.js"></script>
+<script src="js/core/fmt.js"></script>
+<script src="js/core/vec.js"></script>
+<script src="js/core/complex.js"></script>
+<script src="js/core/fft.js"></script>
+<script src="js/core/pulse.js"></script>
+<script src="js/core/plot.js"></script>
+<script src="js/core/progress.js"></script>
+<script src="js/core/canvas.js"></script>
+<script src="js/core/loop.js"></script>
+<script src="js/core/coach.js"></script>
+<script src="js/core/ui.js"></script>
+<script>
+  PHY.ui.initHome();
+  PHY.ui.renderMath(document.body);
+</script>
+</body>
+</html>

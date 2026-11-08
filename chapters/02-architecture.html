@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="he" dir="rtl" data-course="geant4">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>פרק 2: איך Geant4 בנוי | Geant4 צעד אחר צעד</title>
+<meta name="description" content="ריצה, אירוע, מסלול וצעד: איך Geant4 מארגן את העבודה, באיזה סדר הוא קורא לקוד של המשתמש, איך עובדת מחסנית המסלולים, מה פעולת הצעד של ldns סופרת, ואיך ריבוי הליכים מחלק אירועים שלמים. פרק אינטראקטיבי עם ממיר הנייטרונים ldns כדוגמה.">
+<script>try{var t=localStorage.getItem('phy-theme');document.documentElement.setAttribute('data-theme',t||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'))}catch(e){document.documentElement.setAttribute('data-theme','light')}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&family=Rubik:wght@500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css">
+<link rel="stylesheet" href="../css/style.css">
+<style>
+  /* Chapter 2 only */
+  .quest-list { margin: 10px 0 0; padding-inline-start: 22px; }
+  .quest-list li { margin-bottom: 6px; }
+  .class-list { margin: 8px 0 12px; padding-inline-start: 22px; }
+  .class-list li { margin-bottom: 6px; }
+  /* the nested objects G4Run > G4Event > G4Track > G4Step */
+  .g4nest { border: 1.5px solid var(--line-strong); border-radius: 12px; padding: 7px 10px 9px; display: grid; gap: 5px; background: var(--surface); min-width: 0; }
+  .g4nest .g4nest { margin-top: 3px; }
+  .g4nest-run { border-color: var(--ink-soft); }
+  .g4nest-event { border-style: dashed; }
+  .g4nest-track { border-color: var(--accent); }
+  .g4nest-step { border-color: var(--accent); background: var(--accent-soft); }
+  .g4nest-title { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-weight: 700; font-size: 0.84rem; color: var(--ink-soft); text-align: start; }
+  .g4nest-vals { display: flex; flex-wrap: wrap; gap: 3px 14px; font-size: 0.86rem; line-height: 1.45; }
+  .g4nest-kv { display: inline-flex; gap: 5px; align-items: baseline; }
+  .g4nest-k { color: var(--ink-soft); }
+  .g4nest-v { font-weight: 700; font-family: var(--font-head); }
+  /* the step table of the leak tally */
+  .g4table-wrap { overflow-x: auto; }
+  .g4table { width: 100%; border-collapse: collapse; font-size: 0.85rem; line-height: 1.4; }
+  .g4table th { font-family: var(--font-head); font-weight: 600; color: var(--ink-soft); text-align: start; padding: 4px 6px; border-bottom: 1.5px solid var(--line-strong); }
+  .g4table td { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: start; }
+  .g4table td[dir="ltr"] { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.78rem; }
+  .g4table tr.is-row td { font-weight: 700; color: var(--good); }
+  .g4table tbody:empty::after { content: "הטבלה תתמלא אחרי הריצה"; display: block; padding: 6px; color: var(--ink-soft); font-size: 0.85rem; }
+  /* the callback game */
+  .g4seq-label { font-size: 0.85rem; color: var(--ink-soft); font-weight: 600; }
+  .g4seq, .g4pool { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-start; }
+  .g4chip { display: inline-block; padding: 3px 9px; border-radius: 99px; border: 1.8px solid var(--chip-color, var(--line-strong)); background: var(--surface); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.76rem; line-height: 1.5; }
+  .g4seq-empty { color: var(--ink-soft); }
+  .g4now { font-size: 0.92rem; line-height: 1.5; min-height: 3em; }
+  .g4now-k { color: var(--ink-soft); }
+  .g4now-v { font-weight: 700; }
+  .g4pick { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.8rem; font-weight: 600; padding: 6px 10px; }
+</style>
+</head>
+<body>
+
+<header class="topbar" data-topbar></header>
+
+<main>
+
+<!-- 1. HOOK -->
+<section class="section wrap" data-section="hook" id="hook">
+  <span class="kicker">פרק 2: איך Geant4 בנוי</span>
+  <h1 class="hero-title">מה Geant4 יוצר הכי הרבה?</h1>
+  <p class="lead">בפרק 1 ראינו שריצת ה-Be של ldns העבירה \(3\times10^{6}\) פרוטונים דרך ממיר בעובי 2 mm. בפרק הזה נפתח את Geant4 מבפנים: איך הוא מארגן את העבודה, באיזה סדר הוא עובר על החלקיקים, ואיפה הקוד של ldns נכנס לתמונה.</p>
+  <p>Geant4 בונה את הסימולציה מארבעה סוגי אובייקטים, זה בתוך זה: ריצה (run), אירוע (event), מסלול (track) וצעד (step). את כולם פגשנו בפרק 1. השאלה הראשונה פשוטה: מאיזה סוג נוצרו הכי הרבה עותקים בריצה הזאת?</p>
+  <div id="pc-hook">
+    <figure class="sim"><canvas id="c-hook"></canvas><div class="sim-controls" id="ctl-hook"></div></figure>
+  </div>
+  <p class="block-gap">הצעדים מנצחים בפער של סדר גודל ויותר. כל פרוטון הוא אירוע אחד ומסלול אחד, אבל הוא עושה כמה צעדים לפחות: אחד מהמקור עד הממיר דרך הוואקום, ועוד כמה בזמן שהוא מאט. כמה בדיוק תלוי ברשימת הפיזיקה ובאנרגיה; בצעצוע שלנו 40, וזה המספר שנשתמש בו גם בתרגילים. משניים, כמו הנייטרון, נוצרים רק באירועים מעטים: בריצה האמיתית נייטרון אחד לכל כ-2200 פרוטונים.</p>
+  <p>לכן מה שקורה בכל צעד, כלומר הקוד שרץ בפעולת הצעד, הוא הקוד החם ביותר באפליקציה. בצעצוע שלנו, כל שורה מיותרת שם רצה \(1.2\times10^{8}\) פעמים בריצה אחת.</p>
+</section>
+
+<!-- 2. CYCLE: the four nested objects -->
+<section class="section wrap" data-section="nest" id="nest">
+  <div class="section-head"><span class="section-num">2</span><h2>ארבע קופסאות, זו בתוך זו</h2></div>
+  <p>נחזור לאירוע הסכמטי של פרק 1: <span class="c-p">פרוטון</span> של 6.3 MeV נכנס ל-Be, מאט, ובצעד האחרון שלו תגובה לא-אלסטית יוצרת <span class="c-n">נייטרון</span>, <span class="c-g">גמא</span> וגרעין. הגמא עושה פיזור קומפטון ומעיף <span class="c-e">אלקטרון</span>. הפעם נסתכל גם על מה ש-Geant4 מחזיק בזיכרון בכל רגע.</p>
+  <p>מתחת לציור יש ארבע קופסאות, כמו ב-Geant4: <code dir="ltr">G4Run</code> מכיל אירועים, <code dir="ltr">G4Event</code> מכיל מסלולים, וכל <code dir="ltr">G4Track</code> מתקדם בצעדים, <code dir="ltr">G4Step</code>. התגובה של הפרוטון, מסלול 1, יוצרת את הנייטרון, הגמא והגרעין, והם מקבלים את המספרים 2, 3 ו-4.</p>
+  <div id="pc-nest">
+    <figure class="sim"><canvas id="c-nest"></canvas><div class="sim-controls" id="ctl-nest"></div></figure>
+  </div>
+  <p class="block-gap">זה אוצר המילים של כל הפרק. החלקיק שהמקור יורה הוא <b>החלקיק הראשוני</b> (primary), וכל מה שנוצר אחריו הוא <b>משני</b> (secondary). לכל מסלול יש מספר (track ID), מספר ההורה הישיר שלו (parent ID, ואפס לראשוני), <b>התהליך שיצר אותו</b> (creator process), ו<b>משקל סטטיסטי</b> (weight) שעובר בירושה מההורה.</p>
+  <p>הצעד הוא הקטע בין נקודת ההתחלה (PreStepPoint) לנקודת הסיום (PostStepPoint). האנרגיה הקינטית בנקודת ההתחלה היא האנרגיה שהחלקיק הביא לצעד, ובנקודת הסיום רשום התהליך שקבע את אורך הצעד. ldns משתמש בשניהם: לכל נייטרון שנולד הוא רושם את האנרגיה של ההורה בתחילת הצעד שבו קרתה התגובה, ואת שם התהליך.</p>
+  <div data-callout="intuition">
+    <p>זה כמו ספרייה. ריצה היא מדף, אירוע הוא ספר, מסלול הוא פרק, וצעד הוא משפט. כל ספר מתחיל בפרק אחד, הפרוטון, ופרקים חדשים נכתבים תוך כדי, עם הפניה לפרק שממנו יצאו.</p>
+  </div>
+</section>
+
+<!-- 3. CYCLE: where the user code plugs in -->
+<section class="section wrap" data-section="hooks" id="hooks">
+  <div class="section-head"><span class="section-num">3</span><h2>איפה הקוד שלנו נכנס</h2></div>
+  <p>Geant4 הוא ספרייה, לא תוכנה מוכנה. כדי שירוץ, האפליקציה חייבת לתת לו שלושה דברים: גיאומטריה, רשימת פיזיקה (physics list) ומקור של חלקיקים ראשוניים. אלה השורות מ-<code dir="ltr">ldns.cc</code>, הפונקציה <code dir="ltr">main</code>, שבונות את מנהל הריצה, הגיאומטריה ורשימת הפיזיקה:</p>
+  <pre class="code" dir="ltr">  auto runManager = G4RunManagerFactory::CreateRunManager(G4RunManagerType::Default);
+  runManager-&gt;SetNumberOfThreads(std::max(1, nThreads));
+
+  auto det = new DetectorConstruction();
+  runManager-&gt;SetUserInitialization(det);
+
+  G4PhysListFactory factory;
+  if (!factory.IsReferencePhysList(physName)) {
+    G4cerr &lt;&lt; "Unknown physics list: " &lt;&lt; physName &lt;&lt; G4endl;
+    return 1;
+  }
+  G4VModularPhysicsList* phys = factory.GetReferencePhysList(physName);</pre>
+  <p>רשימת הפיזיקה לא נכתבת ביד: <code dir="ltr">G4PhysListFactory</code> מחזיר רשימה מוכנה לפי השם, כאן <code dir="ltr">QGSP_BIC_AllHP_EMZ</code> (פרק 4). ובהמשך אותו קובץ, מנהל הריצה מקבל את רשימת הפיזיקה ואת אתחול הפעולות, נבנים ה-messengers שמגדירים את פקודות המאקרו, ובסוף מגיע מנהל הפקודות:</p>
+  <pre class="code" dir="ltr">  runManager-&gt;SetUserInitialization(phys);
+  runManager-&gt;SetUserInitialization(new ActionInitialization(det, physName));
+
+  // master-only messengers for the shared source / output configuration
+  auto srcMessenger = new SourceMessenger(SourceSpectrum::Instance());
+  auto outMessenger = new OutputMessenger();
+  auto xsDump = new XSDump();
+
+  auto vis = new G4VisExecutive("Quiet");
+  vis-&gt;Initialize();
+
+  auto UImanager = G4UImanager::GetUIpointer();</pre>
+  <p>מעבר לחובה, אפשר לתת ל-Geant4 <b>פעולות משתמש</b> (user actions): מחלקות שהוא קורא להן ברגעים קבועים של הריצה. ldns רושם ארבע, בקובץ <code dir="ltr">src/ActionInitialization.cc</code>:</p>
+  <pre class="code" dir="ltr">void ActionInitialization::Build() const
+{
+  SetUserAction(new PrimaryGeneratorAction);
+  auto run = new RunAction(fDet, fPhysList);
+  SetUserAction(run);
+  auto evt = new EventAction(run);
+  SetUserAction(evt);
+  SetUserAction(new SteppingAction(fDet, evt));
+}</pre>
+  <ul class="class-list">
+    <li><b>חובה:</b> <code dir="ltr">DetectorConstruction</code> (הגיאומטריה), רשימת הפיזיקה, <code dir="ltr">PrimaryGeneratorAction</code> (המקור, הפונקציה <code dir="ltr">GeneratePrimaries</code>), ו-<code dir="ltr">ActionInitialization</code> שרושם את הפעולות.</li>
+    <li><b>רשות:</b> פעולת ריצה, פעולת אירוע, פעולת מסלול (tracking), פעולת צעד (stepping) ופעולת מחסנית (stacking). ל-ldns יש שלוש מהן: ריצה, אירוע וצעד.</li>
+  </ul>
+  <p>למטה ריצה סכמטית של שני אירועים. כל שורה היא קריאה של Geant4, והיא נדלקת ברגע שהיא קורית. ldns אוסף לכל אירוע את סכום המשקלים של הנייטרונים שיצאו מהממיר, במשתנה <code dir="ltr">fLeak</code>, כדי לחשב אחר כך את השגיאה מהפיזור בין האירועים (פרק 1).</p>
+  <div id="pc-hooks">
+    <figure class="sim"><canvas id="c-hooks"></canvas><div class="sim-controls" id="ctl-hooks"></div></figure>
+  </div>
+  <p class="block-gap">זה הקוד של <code dir="ltr">src/EventAction.cc</code>: האיפוס בתחילת כל אירוע, ובסופו העברת הסכומים לפעולת הריצה, שמחברת אותם וגם את הריבועים שלהם:</p>
+  <pre class="code" dir="ltr">void EventAction::BeginOfEventAction(const G4Event*)
+{
+  fSrcW = fLeak = fLeakFwd = fConv = 0.;
+  fModAll = fModBand = fModBandFwd = fModBandFace = 0.;
+  fConvLayer.fill(0.);
+  fLeakedTracks.clear();
+}
+
+void EventAction::EndOfEventAction(const G4Event* event)
+{
+  if (auto v = event-&gt;GetPrimaryVertex()) fSrcW = v-&gt;GetWeight();
+  fRun-&gt;AddEvent(fSrcW, fLeak, fLeakFwd, fConv, fConvLayer);</pre>
+  <p>הסדר קבוע: <code dir="ltr">BeginOfRunAction</code> פעם בריצה; לכל אירוע <code dir="ltr">GeneratePrimaries</code> ואחריה <code dir="ltr">BeginOfEventAction</code>; לכל מסלול <code dir="ltr">PreUserTrackingAction</code>, קריאה של <code dir="ltr">UserSteppingAction</code> לכל צעד, ו-<code dir="ltr">PostUserTrackingAction</code>; בסוף האירוע <code dir="ltr">EndOfEventAction</code>, ובסוף הריצה <code dir="ltr">EndOfRunAction</code>. כל מה שהאפליקציה סופרת נכנס באחד הרגעים האלה.</p>
+  <div data-callout="intuition">
+    <p>Geant4 הוא כמו מנצח שמנהל את התזמורת, והקוד שלנו הוא נגנים שמחכים לתור. אנחנו לא קובעים מתי לנגן; אנחנו רק כותבים מה לנגן כשהמנצח מצביע עלינו.</p>
+  </div>
+</section>
+
+<!-- 4. CYCLE: the stack -->
+<section class="section wrap" data-section="stack" id="stack">
+  <div class="section-head"><span class="section-num">4</span><h2>המחסנית: האחרון שנכנס יוצא ראשון</h2></div>
+  <p>Geant4 מעביר מסלול אחד בכל פעם, עד הסוף. חלקיק משני שנוצר בדרך לא מתחיל לזוז מיד: הוא מחכה במחסנית (stack). כשהמסלול הנוכחי נגמר, המשניים שלו מקבלים מספרים לפי סדר היצירה ונכנסים למחסנית, ו-Geant4 שולף ממנה את המסלול הבא.</p>
+  <p>בציור, הפרוטון (מסלול 1) כבר נגמר. במחסנית מחכים, מלמטה למעלה, הנייטרון (2), הגמא (3) והגרעין (4).</p>
+  <div id="pc-stack">
+    <figure class="sim"><canvas id="c-stack"></canvas><div class="sim-controls" id="ctl-stack"></div></figure>
+  </div>
+  <p class="block-gap">זו מחסנית במובן של מדעי המחשב: האחרון שנכנס יוצא ראשון (LIFO, last in first out). לכן הגמא מועבר לפני הנייטרון, והאלקטרון שהגמא יצר קופץ לראש התור ומועבר מיד אחריו. הסדר המלא באירוע הוא 1, 4, 3, 5, 2.</p>
+  <p>האם הסדר משנה את הפיזיקה? לא. כל מסלול עובר באותה גיאומטריה ובאותו חומר, ומסלולים לא רואים זה את זה. המתג "תור" מראה את אותו עץ בסדר אחר: אותם מסלולים ואותם צעדים. מה שכן משתנה עם סדר אחר הוא איזה מספר אקראי הולך לאיזה מסלול, ולכן אירוע מסוים ייראה אחרת, אבל ההתפלגות של התוצאות נשארת אותה התפלגות.</p>
+  <div data-callout="intuition">
+    <p>כמו ערימת תיקים על השולחן: התיק שהונח אחרון הוא הראשון שנפתח. מי שעובר על כל הערימה בסוף עובר על כל התיקים, ובאיזה סדר זה לא משנה את מה שכתוב בהם.</p>
+  </div>
+</section>
+
+<!-- 5. CYCLE: what a stepping action does -->
+<section class="section wrap" data-section="stepping" id="stepping">
+  <div class="section-head"><span class="section-num">5</span><h2>מה פעולת הצעד של ldns סופרת</h2></div>
+  <p>הספירה החשובה ביותר של ldns היא נייטרונים שיוצאים מהממיר: הטבלה (ntuple) שנקראת <code dir="ltr">leak</code>. היא נבנית בפעולת הצעד, שרואה כל צעד של כל חלקיק ומחליטה אם לכתוב שורה.</p>
+  <p>בציור ממיר של שתי שכבות, Be ומאחוריו Pb. <span class="c-n">נייטרון</span> נולד ב-Be, מתפזר, עובר ל-Pb, מתפזר שוב, יוצא דרך הפאה האחורית, וממשיך עד קצה העולם.</p>
+  <div id="pc-leak">
+    <figure class="sim"><canvas id="c-leak"></canvas><div class="sim-controls" id="ctl-leak"></div></figure>
+  </div>
+  <p class="block-gap">ככה זה נראה ב-<code dir="ltr">src/SteppingAction.cc</code>. התנאי של ה-<code dir="ltr">if</code> הוא כל הסיפור:</p>
+  <pre class="code" dir="ltr">  if (def == neutron &amp;&amp; post-&gt;GetStepStatus() == fGeomBoundary &amp;&amp;
+      DetectorConstruction::LayerIndex(post-&gt;GetPhysicalVolume()) &lt; 0 &amp;&amp;
+      fEvt-&gt;FirstLeak(track-&gt;GetTrackID()))
+  {
+    const G4double w = track-&gt;GetWeight();
+    const G4ThreeVector&amp; d = post-&gt;GetMomentumDirection();
+    fEvt-&gt;AddLeak(w, d.z() &gt; 0.);
+    if (level &gt;= 1) {
+      const G4ThreeVector&amp; x = post-&gt;GetPosition();
+      am-&gt;FillNtupleIColumn(2, 0, evt);
+      am-&gt;FillNtupleDColumn(2, 1, post-&gt;GetKineticEnergy() / MeV);
+      am-&gt;FillNtupleDColumn(2, 2, d.z());</pre>
+  <ul class="class-list">
+    <li>החלקיק הוא נייטרון.</li>
+    <li>הצעד נגמר על גבול גיאומטרי (<code dir="ltr">fGeomBoundary</code>), כלומר Transportation קבע אותו. פיזור באמצע השכבה לא נחשב.</li>
+    <li>הנפח של נקודת הסיום, שבצעד גבול הוא כבר הנפח הבא, אינו שכבה של הממיר. המעבר מ-Be ל-Pb הוא צעד גבול, אבל הנייטרון עדיין בממיר. קצת קודם באותה פונקציה יש עוד תנאי: הצעד התחיל בתוך שכבה.</li>
+    <li>זו היציאה הראשונה של המסלול הזה (<code dir="ltr">FirstLeak</code>), כדי שנייטרון שחוזר מהמאט ויוצא שוב לא ייספר פעמיים.</li>
+  </ul>
+  <p>אז נכתבת שורה: מספר האירוע, האנרגיה בנקודת הסיום, ו-\(\cos\theta\), הרכיב של הכיוון לאורך ציר הקורה; בהמשך השורה גם המשקל. בריצת ה-Be נכתבו כך 6126 שורות, עם משקל ממוצע 0.219.</p>
+</section>
+
+<!-- 6. CYCLE: multithreading -->
+<section class="section wrap" data-section="threads" id="threads">
+  <div class="section-head"><span class="section-num">6</span><h2>הרבה הליכים, אירועים שלמים</h2></div>
+  <p>הריצה האמיתית לקחה 17.6 שניות על 10 הליכים (threads). ב-Geant4 יש הליך מנהל (master) שבונה את הגיאומטריה ואת טבלאות הפיזיקה פעם אחת, והליכי עבודה (workers) שמריצים אירועים. את מספר ההליכים קובע הדגל <code dir="ltr">-t</code> בשורת הפקודה של ldns, ובלעדיו כל הליבות.</p>
+  <p>בצעצוע למטה 16 אירועים על ארבעה הליכים. הליך פנוי לוקח את האירוע הבא. באירועים שבהם הפרוטון יצר נייטרון, הקצה של הבלוק ירוק.</p>
+  <div id="pc-threads">
+    <figure class="sim"><canvas id="c-threads"></canvas><div class="sim-controls" id="ctl-threads"></div></figure>
+  </div>
+  <p class="block-gap">החלוקה היא לפי אירועים שלמים: אירוע לא נחתך בין הליכים, ולכן כל המחסנית שלו, כל המשניים וכל הצעדים, חיים בהליך אחד. לכל הליך יש עותק משלו של פעולות המשתמש, ובמיוחד של הסכומים. בסוף הריצה המנהל ממזג אותם. זה הקוד מ-<code dir="ltr">src/RunAction.cc</code>, שרץ בכל הליך ובמנהל:</p>
+  <pre class="code" dir="ltr">void RunAction::EndOfRunAction(const G4Run* run)
+{
+  G4AccumulableManager::Instance()-&gt;Merge();
+  auto am = G4AnalysisManager::Instance();
+  am-&gt;Write();
+  am-&gt;CloseFile();
+
+  if (!IsMaster()) return;</pre>
+  <p>רק המנהל ממשיך ומדפיס את הסיכום. גם הטבלאות מתמזגות, לקובץ ROOT אחד. בלוג של ריצת ה-Be, אחרי שכל ההליכים סיימו, המנהל מדפיס:</p>
+  <pre class="code" dir="ltr"> Run terminated.
+Run Summary
+  Number of events processed : 3000000
+  User=139.720000s Real=17.560265s Sys=1.090000s [Cpu=801.9%]</pre>
+  <p><code dir="ltr">Real</code> הוא זמן השעון, 17.6 שניות. ומה עם האקראיות? כמו שראינו בפרק 1, המנהל נותן לכל אירוע זרעים משלו לפני שהוא נשלח להליך, מתוך הזרע הראשי של <code dir="ltr">-s</code>. לכן התוצאה לא תלויה במי הריץ איזה אירוע, ו-<code dir="ltr">-t 4</code> ו-<code dir="ltr">-t 8</code> עם אותו זרע נותנים אותם מספרים.</p>
+</section>
+
+<!-- 7. GLOSSARY -->
+<section class="section wrap" data-section="formula" data-passive id="formula">
+  <div class="section-head"><span class="section-num">7</span><h2>מילון המונחים</h2></div>
+  <p>בפרק הזה כמעט אין נוסחאות, יש מילים. כל אחת כבר רצה על המסך; כאן היא מקבלת שורה אחת.</p>
+  <div class="formula-card">
+    <h3>תשעה מונחים של Geant4</h3>
+    <table class="symbol-table">
+      <thead><tr><th>מונח</th><th>משמעות</th></tr></thead>
+      <tbody>
+        <tr><td><b>ריצה</b> <code dir="ltr">G4Run</code></td><td>הרבה אירועים עם אותה גיאומטריה ואותה פיזיקה. מתחילה ב-<code dir="ltr">/run/beamOn</code>.</td></tr>
+        <tr><td><b>אירוע</b> <code dir="ltr">G4Event</code></td><td>חלקיק ראשוני אחד וכל הצאצאים שלו. ב-ldns: פרוטון אחד מהמקור.</td></tr>
+        <tr><td><b>מסלול</b> <code dir="ltr">G4Track</code></td><td>חלקיק אחד בזמן שהוא מועבר: מספר, הורה, תהליך יוצר, משקל. נמחק כשהוא נגמר.</td></tr>
+        <tr><td><b>רשומת מסלול</b> (trajectory)</td><td>הנקודות של מסלול, שנשמרות בצד בשביל הציור ומצוירות בסוף האירוע.</td></tr>
+        <tr><td><b>צעד</b> <code dir="ltr">G4Step</code></td><td>הקטע בין PreStepPoint ל-PostStepPoint, עם התהליך שקבע את אורכו.</td></tr>
+        <tr><td><b>תהליך</b> (process)</td><td>פיזיקה שמציעה אורך צעד ומשנה את החלקיק: <code dir="ltr">hIoni</code>, <code dir="ltr">protonInelastic</code>, ו-<code dir="ltr">Transportation</code> לגבולות.</td></tr>
+        <tr><td><b>נפח</b> (volume)</td><td>חלק של הגיאומטריה עם חומר. כל גבול שלו עוצר צעד. בפרק 3.</td></tr>
+        <tr><td><b>פעולת משתמש</b> (action)</td><td>מחלקה שלנו ש-Geant4 קורא לה ברגע קבוע: ריצה, אירוע, מסלול, צעד, מחסנית.</td></tr>
+        <tr><td><b>messenger</b></td><td>מחלקה שמגדירה פקודות מאקרו, כמו <code dir="ltr">DetectorMessenger</code> שמגדיר את <code dir="ltr">/ldns/det/</code>.</td></tr>
+      </tbody>
+    </table>
+    <p class="not-say"><b>מה המילון לא אומר:</b> שהאובייקטים חיים לאורך כל הריצה. מסלול נמחק כשהוא נגמר, צעד מתחלף בכל צעד, ואירוע נגמר לפני שהבא מתחיל. מה שרוצים לשמור, כותבים בזמן: לסכום, לטבלה או להיסטוגרמה.</p>
+  </div>
+
+  <div data-callout="lab">
+    <p>ריצת ה-Be של ldns, מצד הארגון שלה:</p>
+    <table class="lab-table">
+      <tbody>
+        <tr><th>שורת הפקודה</th><td class="v">ldns -m output/E30J_M2p5_Be2.mac</td></tr>
+        <tr><th>הליכים</th><td class="v">10 (ברירת המחדל: כל הליבות)</td></tr>
+        <tr><th>זרע</th><td class="v">12345 (ברירת המחדל של -s)</td></tr>
+        <tr><th>אירועים</th><td class="v">3×10⁶</td></tr>
+        <tr><th>זמן שעון</th><td class="v">17.6 s</td></tr>
+        <tr><th>פעולות משתמש</th><td class="v">Run, Event, Stepping</td></tr>
+        <tr><th>שורות ב-leak</th><td class="v">6126</td></tr>
+      </tbody>
+    </table>
+    <p class="small muted">כל השורות של הטבלה נכתבו ב-<code dir="ltr">UserSteppingAction</code>, ומוזגו לקובץ אחד בסוף הריצה.</p>
+  </div>
+</section>
+
+<!-- 8. PLAYGROUND -->
+<section class="section wrap-wide" data-section="playground" id="playground">
+  <div class="section-head"><span class="section-num">8</span><h2>מעבדת האירוע</h2></div>
+  <p>אירוע סכמטי אחד בכל פעם, מוגרל מזרע. בצעצוע חצי מהאירועים נגמרים בתגובה, כדי שיהיה מה לראות. העץ למטה נבנה בסדר שבו Geant4 מעביר את המסלולים. כמה דברים שכדאי לבדוק:</p>
+  <ul class="quest-list">
+    <li>להגדיל את אנרגיית הפרוטון. מה קורה למספר הצעדים שלו?</li>
+    <li>לכבות את "משניים". כמה מהצעדים של האירוע היו של הפרוטון עצמו?</li>
+    <li>למצוא אירוע עם גמא ואלקטרון, ולעקוב אחרי סדר ההובלה בעץ. מי מועבר אחרי הגמא?</li>
+    <li>ללחוץ "שוב, אותו זרע" כמה פעמים. משהו זז?</li>
+  </ul>
+  <figure class="sim block-gap"><canvas id="c-lab"></canvas><div class="sim-controls" id="ctl-lab"></div></figure>
+</section>
+
+<!-- 9. GAME -->
+<section class="section wrap-wide" data-section="game" id="game">
+  <div class="section-head"><span class="section-num">9</span><h2>אתגר: מי נקרא מתי</h2></div>
+  <p>בכל שלב אירוע אחר, והקריאות שלו מעורבבות. צריך לסדר אותן כמו ש-Geant4 קורא להן. השמות מקוצרים: <code dir="ltr">PreTracking</code> הוא <code dir="ltr">PreUserTrackingAction</code>, ו-<code dir="ltr">Stepping ×4 p</code> הן ארבע קריאות של <code dir="ltr">UserSteppingAction</code> בצעדים של הפרוטון.</p>
+  <p class="muted small">שלב בלי טעויות שווה 3 נקודות, עם טעות או שתיים 2, ואחר כך 1. הכוכבים נקבעים מסכום הנקודות, והאירועים משתנים בכל סיבוב.</p>
+  <figure class="sim"><canvas id="c-game"></canvas><div class="sim-controls" id="ctl-game"></div></figure>
+</section>
+
+<!-- 10. TRAPS -->
+<section class="section wrap" data-section="traps" id="traps">
+  <div class="section-head"><span class="section-num">10</span><h2>מלכודות</h2></div>
+  <p>ארבע תמונות שגויות של מה ש-Geant4 עושה בפנים. כל אחת נשמעת סבירה, ובגלל זה היא מסוכנת.</p>
+  <div id="pc-trap1">
+    <figure class="sim"><canvas id="c-trap1"></canvas><div class="sim-controls" id="ctl-trap1"></div></figure>
+  </div>
+  <div id="pc-trap2">
+    <figure class="sim"><canvas id="c-trap2"></canvas><div class="sim-controls" id="ctl-trap2"></div></figure>
+  </div>
+  <div id="pc-trap3">
+    <figure class="sim"><canvas id="c-trap3"></canvas><div class="sim-controls" id="ctl-trap3"></div></figure>
+  </div>
+  <div id="pc-trap4">
+    <figure class="sim"><canvas id="c-trap4"></canvas><div class="sim-controls" id="ctl-trap4"></div></figure>
+  </div>
+</section>
+
+<!-- 11. PROBLEMS -->
+<section class="section wrap" data-section="problems" id="problems">
+  <div class="section-head"><span class="section-num">11</span><h2>תרגילים</h2></div>
+  <p>ארבעה חישובים של ספירה וזמן, מהסוג שכדאי לעשות לפני שמזמינים ריצה ארוכה.</p>
+  <div id="problems-host"></div>
+</section>
+
+<!-- 12. QUIZ -->
+<section class="section wrap" data-section="quiz" id="quiz">
+  <div class="section-head"><span class="section-num">12</span><h2>בוחן</h2></div>
+  <p>חמש שאלות על הפרק ועוד שתיים מפרק 1. הציון הטוב ביותר נשמר, ואפשר לנסות שוב כמה פעמים שרוצים.</p>
+  <div id="quiz-host" class="block-gap"></div>
+</section>
+
+<!-- 13. POCKET CARD -->
+<section class="section wrap" data-section="pocket" data-passive id="pocket">
+  <div class="section-head"><span class="section-num">13</span><h2>כרטיס כיס</h2></div>
+  <div class="pocket">
+    <h3>איך Geant4 בנוי, על כף היד</h3>
+    <div class="pocket-grid">
+      <div class="pocket-item"><b>הקופסאות:</b> ריצה ⊃ אירוע ⊃ מסלול ⊃ צעד. אירוע הוא חלקיק ראשוני אחד וכל הצאצאים שלו.</div>
+      <div class="pocket-item"><b>מסלול:</b> track ID, parent ID (אפס לראשוני), creator process, weight שעובר בירושה.</div>
+      <div class="pocket-item"><b>הסדר:</b> <code dir="ltr">BeginOfRun</code>, ולכל אירוע <code dir="ltr">GeneratePrimaries</code>, <code dir="ltr">BeginOfEvent</code>, לכל מסלול <code dir="ltr">PreTracking</code>, <code dir="ltr">Stepping</code> לכל צעד, <code dir="ltr">PostTracking</code>, ואז <code dir="ltr">EndOfEvent</code>; בסוף <code dir="ltr">EndOfRun</code>.</div>
+      <div class="pocket-item"><b>מחסנית:</b> המשניים נכנסים כשההורה נגמר, והאחרון שנכנס יוצא ראשון. הסדר לא משנה את הפיזיקה.</div>
+      <div class="pocket-item"><b>leak של ldns:</b> נייטרון, צעד שהתחיל בממיר ונגמר על גבול, הנפח הבא מחוץ לממיר, יציאה ראשונה.</div>
+      <div class="pocket-item"><b>הליכים:</b> <code dir="ltr">-t</code> קובע כמה; כל הליך מריץ אירועים שלמים; המנהל ממזג בסוף. <code dir="ltr">-s</code> קובע את הזרע.</div>
+      <div class="pocket-item"><b>ריצת ה-Be:</b> \(3\times10^{6}\) אירועים ב-17.6 s על 10 הליכים, 6126 שורות ב-<code dir="ltr">leak</code>.</div>
+    </div>
+    <div class="pocket-quote">"אנחנו לא מריצים את Geant4. הוא מריץ אותנו, בכל צעד."</div>
+  </div>
+</section>
+
+</main>
+
+<div data-chapter-nav></div>
+<footer data-footer></footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/contrib/auto-render.min.js"></script>
+<script src="../js/core/fmt.js"></script>
+<script src="../js/core/vec.js"></script>
+<script src="../js/core/complex.js"></script>
+<script src="../js/core/fft.js"></script>
+<script src="../js/core/pulse.js"></script>
+<script src="../js/core/plot.js"></script>
+<script src="../js/core/progress.js"></script>
+<script src="../js/core/canvas.js"></script>
+<script src="../js/core/loop.js"></script>
+<script src="../js/core/coach.js"></script>
+<script src="../js/core/ui.js"></script>
+<script src="../js/sims/ch02/kit.js"></script>
+<script src="../js/sims/ch02/arch-count.js"></script>
+<script src="../js/sims/ch02/arch-event.js"></script>
+<script src="../js/sims/ch02/arch-timeline.js"></script>
+<script src="../js/sims/ch02/arch-stack.js"></script>
+<script src="../js/sims/ch02/arch-leak.js"></script>
+<script src="../js/sims/ch02/arch-threads.js"></script>
+<script src="../js/sims/ch02/arch-lab.js"></script>
+<script src="../js/sims/ch02/arch-order-game.js"></script>
+<script src="../js/sims/ch02/arch-run-boxes.js"></script>
+<script src="../js/sims/ch02/arch-traj.js"></script>
+<script src="../js/sims/ch02/arch-time.js"></script>
+<script>
+(function () {
+  'use strict';
+  const CH = '02';
+  const U = PHY.ui;
+  const $ = (id) => document.getElementById(id);
+  const TAG = 'הניחוש שלנו';
+
+  /* ---------- 1. Hook: events, tracks or steps ---------- */
+  const count = PHY.sims.archCount($('c-hook'), $('ctl-hook'), { locked: true });
+  U.PredictCard($('pc-hook'), {
+    chapter: CH, id: 'hook', section: 'hook', tag: TAG,
+    question: `בריצה של \\(3\\times10^{6}\\) פרוטונים דרך ה-Be, מאיזה סוג אובייקט Geant4 יצר הכי הרבה עותקים?`,
+    options: [
+      { text: `מסלולים: כל פרוטון מייצר מפל של חלקיקים משניים, וכל אחד מהם הוא מסלול.`, why: `ככה זה במפל של אלקטרונים באנרגיה גבוהה. כאן כמעט כל פרוטון פשוט מאט ונעצר, ומשני נוצר רק באירוע אחד מני רבים. מספר המסלולים כמעט שווה למספר האירועים.` },
+      { text: `צעדים, בהרבה: כל פרוטון לבדו עושה כמה צעדים לפחות, ובדרך כלל הרבה.`, correct: true },
+      { text: `כולם בערך אותו מספר: פרוטון אחד הוא אירוע אחד, מסלול אחד וצעד אחד.`, why: `אירוע ומסלול, כמעט. אבל צעד הוא לא כל המסלול: גם בצעצוע הכי קמצני יש צעד אחד מהמקור לממיר ועוד לפחות אחד בתוכו, כי הפרוטון מאבד אנרגיה בהדרגה.` },
+    ],
+    onRun: () => count.play(5),
+    steps: [
+      { hint: `כמה אירועים וכמה מסלולים ראשוניים יש בריצה?`,
+        work: `כל פרוטון הוא אירוע אחד ומסלול ראשוני אחד: \\(3\\times10^{6}\\) מכל אחד.` },
+      { hint: `כמה מסלולים משניים נוספים, אם בחלק \\(4.5\\times10^{-4}\\) מהאירועים נוצר נייטרון?`,
+        work: `\\(3\\times10^{6}\\cdot 4.5\\times10^{-4} = 1350\\) מסלולים נוספים, כלומר \\(3.00135\\times10^{6}\\) מסלולים: כמעט כמו האירועים.` },
+      { hint: `וכמה צעדים, אם כל פרוטון עושה 40 צעדים וכל נייטרון עוד 10?`,
+        work: `\\(3\\times10^{6}\\cdot 40 + 1350\\cdot 10 = 1.2\\times10^{8}\\) צעדים, פי 40 מהאירועים. התשובה: הצעדים, בהרבה.` },
+    ],
+    explanation: `<p>אפשר להריץ שוב ולעקוב אחרי הפסים: שניים כמעט באותו גובה, והשלישי רחוק. ציר ה-x לוגריתמי, כך שכל שנתה היא פי 1000.</p>`,
+    sayRight: 'נכון. הצעדים, בפער של סדר גודל ויותר.',
+    sayWrong: 'גם אני דמיינתי מפל של משניים. בממיר הזה הפרוטונים פשוט נעצרים.',
+  });
+
+  /* ---------- 2. The nested objects ---------- */
+  const evt = PHY.sims.archEvent($('c-nest'), $('ctl-nest'), { locked: true, chapter: CH, section: 'nest' });
+  U.PredictCard($('pc-nest'), {
+    chapter: CH, id: 'nest', section: 'nest', tag: TAG,
+    question: `הגמא (מסלול 3) עושה פיזור קומפטון ויוצר אלקטרון. מה ה-parent ID של האלקטרון, ואיזה תהליך רשום אצלו כיוצר?`,
+    options: [
+      { text: `1 ו-protonInelastic: כל מה שיש באירוע התחיל מהפרוטון.`, why: `נכון שכל האירוע התחיל מהפרוטון, אבל ה-parent ID הוא ההורה הישיר, לא האב הקדמון. את האב הקדמון מוצאים בהליכה אחורה בעץ.` },
+      { text: `3 ו-compt: הגמא, שהפיזור שלו יצר את האלקטרון.`, correct: true },
+      { text: `0 ובלי תהליך: כל חלקיק חדש מתחיל כחלקיק ראשוני.`, why: `אפס שמור לחלקיק שהמקור יוצר. חלקיק שנוצר בתוך האירוע הוא משני, והוא זוכר את ההורה שלו ואת התהליך שיצר אותו.` },
+    ],
+    onRun: () => evt.play(7),
+    steps: [
+      { hint: `איזה מסלול היה פעיל ברגע שהאלקטרון נוצר?`,
+        work: `האלקטרון נוצר בצעד הראשון של הגמא, מסלול 3. באותו צעד התהליך <code dir="ltr">compt</code> קבע את אורך הצעד ויצר את האלקטרון.` },
+      { hint: `מה נרשם אצל משני על ההורה שלו?`,
+        work: `המספר של המסלול שבצעד שלו הוא נוצר, ושם התהליך: parent ID = 3 ו-creator process = <code dir="ltr">compt</code>. הוא מקבל את המספר 5, כי הוא נכנס למחסנית אחרי 2, 3 ו-4.` },
+      { hint: `ומה ראינו בקופסה של G4Track כשהאלקטרון רץ?`,
+        work: `מספר 5, הורה 3, נוצר ב-<code dir="ltr">compt</code>, ואותו משקל כמו כל האירוע. התשובה: 3 ו-compt.` },
+    ],
+    explanation: `<p>הכפתור "צעד אחד קדימה" פתוח: אפשר לעבור על האירוע צעד אחרי צעד ולראות מה משתנה בכל קופסה, ומה נשאר קבוע.</p>`,
+    sayRight: 'נכון. ההורה הוא הישיר, והתהליך הוא זה שיצר.',
+    sayWrong: 'גם אני חיפשתי פעם את האב הקדמון. Geant4 זוכר רק את ההורה.',
+  });
+
+  /* ---------- 3. The callbacks ---------- */
+  const tline = PHY.sims.archTimeline($('c-hooks'), $('ctl-hooks'), { locked: true, chapter: CH, section: 'hooks' });
+  U.PredictCard($('pc-hooks'), {
+    chapter: CH, id: 'hooks', section: 'hooks', tag: TAG,
+    question: `ldns צריך את הסכום <code dir="ltr">fLeak</code> של כל אירוע בנפרד. באיזו קריאה הוא מאפס אותו?`,
+    options: [
+      { text: `<code dir="ltr">BeginOfRunAction</code>: מאפסים פעם אחת, בתחילת הריצה.`, why: `אז הסכום היה מצטבר לאורך כל הריצה, ואת הערך של כל אירוע לבד כבר אי אפשר היה לשחזר. ובלעדיו אין שגיאה מהפיזור בין האירועים.` },
+      { text: `<code dir="ltr">BeginOfEventAction</code>: בתחילת כל אירוע.`, correct: true },
+      { text: `<code dir="ltr">PreUserTrackingAction</code>: לפני כל חלקיק.`, why: `אז אירוע עם שני נייטרונים היה מאבד את הראשון כשהשני מתחיל. ול-ldns בכלל אין פעולת מסלול.` },
+    ],
+    onRun: () => tline.play(8),
+    steps: [
+      { hint: `על מה בדיוק הסכום הזה צריך להיות?`,
+        work: `על אירוע אחד: כל הנייטרונים שיצאו באותו אירוע, מכל המסלולים שלו. מזה ldns מחשב את הממוצע ואת הפיזור בין האירועים, כמו ב-<code dir="ltr">MeanErr</code> של פרק 1.` },
+      { hint: `איזו קריאה מגיעה פעם אחת בדיוק לפני כל אירוע, ואיזו פעם אחת אחריו?`,
+        work: `<code dir="ltr">BeginOfEventAction</code> לפני שהמסלול הראשון מתחיל, ו-<code dir="ltr">EndOfEventAction</code> אחרי שהאחרון נגמר. ביניהן כל קריאות הצעד של האירוע מוסיפות לסכום.` },
+      { hint: `ומה ראינו בריצה של שני האירועים?`,
+        work: `באירוע 0 הנייטרון יצא והסכום עלה ל-0.22; בסוף האירוע הוא עבר לריצה; בתחילת אירוע 1 הוא חזר לאפס. התשובה: <code dir="ltr">BeginOfEventAction</code>.` },
+    ],
+    explanation: `<p>אפשר להריץ שוב ולספור: כמה פעמים נקראה <code dir="ltr">UserSteppingAction</code> בכל הריצה, וכמה פעמים <code dir="ltr">PreUserTrackingAction</code>?</p>`,
+    sayRight: 'נכון. סכום של אירוע מתחיל באפס בתחילת האירוע.',
+    sayWrong: 'גם אני איפסתי פעם במקום הלא נכון. השגיאות יצאו מוזרות.',
+  });
+
+  /* ---------- 4. The stack ---------- */
+  const stack = PHY.sims.archStack($('c-stack'), $('ctl-stack'), { locked: true, chapter: CH, section: 'stack' });
+  U.PredictCard($('pc-stack'), {
+    chapter: CH, id: 'stack', section: 'stack', tag: TAG,
+    question: `הפרוטון נגמר, ובמחסנית מחכים מלמטה למעלה: נייטרון (2), גמא (3) וגרעין (4). מי מועבר עכשיו?`,
+    options: [
+      { text: `הנייטרון, מסלול 2: הוא נוצר ראשון, ומי שבא ראשון מקבל ראשון.`, why: `ככה עובד תור בקופה. מחסנית עובדת הפוך: מוציאים מלמעלה, ולמעלה נמצא מה שנכנס אחרון.` },
+      { text: `הגרעין, מסלול 4: האחרון שנכנס יוצא ראשון.`, correct: true },
+      { text: `כולם יחד: שלושה חלקיקים, שלושה חישובים במקביל.`, why: `באירוע אחד Geant4 מעביר מסלול אחד בכל רגע, עד הסוף. מקבילות יש רק בין אירועים, בהליכים שונים.` },
+    ],
+    onRun: () => stack.play(6),
+    steps: [
+      { hint: `באיזה סדר נכנסו 2, 3 ו-4 למחסנית?`,
+        work: `לפי סדר היצירה בצעד של התגובה: קודם 2, אחריו 3, ואחרון 4. לכן 4 בראש המחסנית.` },
+      { hint: `מאיזה קצה Geant4 שולף?`,
+        work: `מהראש: האחרון שנכנס יוצא ראשון. מסלול 4, הגרעין, מועבר עכשיו.` },
+      { hint: `ומה קורה כשהגמא יוצר אלקטרון?`,
+        work: `האלקטרון מקבל את המספר 5 כשהגמא נגמר, נכנס לראש המחסנית, ומועבר מיד, לפני הנייטרון. הסדר: 1, 4, 3, 5, 2. התשובה: הגרעין, מסלול 4.` },
+    ],
+    explanation: `<p>הכפתור "את כל האירוע מההתחלה" והמתג "תור" פתוחים. מה משתנה כשמחליפים מחסנית בתור, ומה לא?</p>`,
+    sayRight: 'נכון. אחרון נכנס, ראשון יוצא.',
+    sayWrong: 'גם אני חשבתי על תור בקופה. Geant4 עובד עם ערימה.',
+  });
+
+  /* ---------- 5. The stepping action ---------- */
+  const leak = PHY.sims.archLeak($('c-leak'), $('ctl-leak'), { locked: true, rng: PHY.random(8).next, chapter: CH, section: 'stepping' });
+  U.PredictCard($('pc-leak'), {
+    chapter: CH, id: 'stepping', section: 'stepping', tag: TAG,
+    question: `הנייטרון עושה חמישה צעדים: פיזור ב-Be, מעבר ל-Pb, פיזור ב-Pb, יציאה מהפאה האחורית, ויציאה מהעולם. כמה שורות פעולת הצעד של ldns כותבת עליו לטבלה <code dir="ltr">leak</code>?`,
+    options: [
+      { text: `אחת.`, correct: true },
+      { text: `שתיים: אחת לכל גבול שהוא חוצה בדרך החוצה.`, why: `המעבר מ-Be ל-Pb הוא באמת צעד גבול. אבל אחריו הנייטרון עדיין בתוך הממיר, ו-ldns בודק בדיוק את זה: לאיזה נפח הוא נכנס.` },
+      { text: `חמש: שורה לכל צעד, ואחר כך מסננים.`, why: `פעולת הצעד רואה את כל חמשת הצעדים, אבל היא כותבת רק כשהתנאי מתקיים. שורה לכל צעד הייתה ממלאת את הדיסק: בצעצוע של הפתיחה היו \\(1.2\\times10^{8}\\) צעדים.` },
+    ],
+    onRun: () => leak.play(5),
+    steps: [
+      { hint: `אילו מהצעדים נגמרו על גבול גיאומטרי?`,
+        work: `צעדים 2, 4 ו-5: המעבר מ-Be ל-Pb, היציאה מהפאה האחורית, והיציאה מהעולם. צעדים 1 ו-3 הם פיזורים, ושם התהליך <code dir="ltr">hadElastic</code> קבע את הצעד.` },
+      { hint: `בכל אחד מהם: איפה התחיל הצעד, ומה הנפח הבא?`,
+        work: `צעד 2: התחיל ב-Be, הנפח הבא Pb, שהוא שכבה: לא נספר. צעד 4: התחיל ב-Pb, הנפח הבא World: נספר. צעד 5: התחיל ב-World, מחוץ לממיר: ldns לא סופר שם כלום.` },
+      { hint: `ומה ראינו בטבלת הצעדים?`,
+        work: `שורה אחת, בצעד 4, עם האנרגיה, \\(\\cos\\theta\\) והמשקל של הנייטרון ברגע היציאה. התשובה: אחת.` },
+    ],
+    explanation: `<p>הכפתור "עוד נייטרון" פתוח: נייטרונים אקראיים נולדים ב-Be או ב-Pb. כמה מהם נבלעים בלי לצאת? ואיזה צעד אף פעם לא כותב שורה?</p>`,
+    sayRight: 'נכון. שורה אחת, ביציאה האמיתית.',
+    sayWrong: 'גם אני ספרתי פעם את המעבר בין השכבות. ldns בודק לאן נכנסים.',
+  });
+
+  /* ---------- 6. Threads ---------- */
+  const thr = PHY.sims.archThreads($('c-threads'), $('ctl-threads'), { mode: 'card', locked: true, chapter: CH, section: 'threads' });
+  U.PredictCard($('pc-threads'), {
+    chapter: CH, id: 'threads', section: 'threads', tag: TAG,
+    question: `אירוע 7 רץ באחד מהליכי העבודה, והפרוטון שלו יוצר נייטרון. מי מעביר את הנייטרון?`,
+    options: [
+      { text: `ההליך הפנוי הבא, כדי שכל ההליכים יישארו עסוקים.`, why: `זה היה מאזן עומס יפה, אבל אז אירוע היה מתפזר בין הליכים, וכל אחד מהם היה צריך את המחסנית של האחר. Geant4 מחלק עבודה ברמת האירוע בלבד.` },
+      { text: `אותו הליך שמריץ את אירוע 7: האירוע כולו חי בהליך אחד.`, correct: true },
+      { text: `ההליך המנהל, שאוסף את כל הנייטרונים של הריצה.`, why: `המנהל לא מעביר חלקיקים. הוא מחלק זרעים לפני הריצה וממזג סכומים אחריה.` },
+    ],
+    onRun: () => thr.play(5.5),
+    steps: [
+      { hint: `מה יחידת העבודה שהליך לוקח כשהוא פנוי?`,
+        work: `אירוע שלם: הפרוטון הראשוני עם הזרעים שלו. ההליך מריץ אותו מ-<code dir="ltr">BeginOfEventAction</code> עד <code dir="ltr">EndOfEventAction</code>.` },
+      { hint: `איפה נמצאת המחסנית שאליה נכנס הנייטרון?`,
+        work: `בהליך שמריץ את האירוע: לכל הליך מנהל אירועים ומחסנית משלו. הנייטרון נכנס אליה ומועבר שם, כמו כל משני.` },
+      { hint: `ומה ראינו בציור?`,
+        work: `הקצה הירוק של אירוע 7, הנייטרון, באותו פס כמו האירוע כולו. בסוף כל הליך מסר את הספירה שלו, והמנהל חיבר. התשובה: אותו הליך.` },
+    ],
+    explanation: `<p>אפשר להריץ שוב: הספירה של כל הליך שונה, אבל הסכום אחרי המיזוג לא תלוי בחלוקה.</p>`,
+    sayRight: 'נכון. אירוע לא נחתך בין הליכים.',
+    sayWrong: 'גם אני ציפיתי לאיזון עומס. Geant4 מחלק אירועים שלמים.',
+  });
+
+  /* ---------- 8. Playground ---------- */
+  PHY.sims.archLab($('c-lab'), $('ctl-lab'), { seed: 12356, E: 6.3, chapter: CH, section: 'playground' });
+
+  /* ---------- 9. Game ---------- */
+  PHY.sims.archOrderGame($('c-game'), $('ctl-game'), { chapter: CH, section: 'game' });
+
+  /* ---------- 10. Traps ---------- */
+  const trapDone = {};
+  const trapFinished = (name) => {
+    trapDone[name] = true;
+    if (trapDone.a && trapDone.b && trapDone.c && trapDone.d) PHY.progress.markSection(CH, 'traps');
+  };
+
+  const boxes = PHY.sims.archRunBoxes($('c-trap1'), $('ctl-trap1'), { locked: true });
+  U.PredictCard($('pc-trap1'), {
+    chapter: CH, id: 'trap1', tag: 'מלכודת 1: מה זה אירוע',
+    question: `<code dir="ltr">/run/beamOn 3</code> יורה שלושה פרוטונים. הראשון יוצר נייטרון, גמא וגרעין; השניים האחרים נעצרים. כמה אירועים יש בריצה?`,
+    options: [
+      { text: `שישה: כל חלקיק שנע בממיר הוא אירוע.`, why: `שישה הם המסלולים. אירוע הוא כל המשפחה של חלקיק ראשוני אחד, והמשניים שייכים לאירוע של הפרוטון שיצר אותם.` },
+      { text: `שלושה: אירוע לכל פרוטון, עם כל הצאצאים שלו.`, correct: true },
+      { text: `אחד: הריצה כולה היא אירוע גדול.`, why: `הריצה היא האוסף. אילו כל הריצה הייתה אירוע אחד, לא הייתה דרך למדוד פיזור בין אירועים, ולא הייתה שגיאה.` },
+    ],
+    onRun: () => boxes.play(4),
+    steps: [
+      { hint: `מה <code dir="ltr">/run/beamOn 3</code> סופר?`,
+        work: `אירועים: שלוש קריאות ל-<code dir="ltr">GeneratePrimaries</code>, כל אחת יוצרת פרוטון ראשוני אחד.` },
+      { hint: `לאן שייכים הנייטרון, הגמא והגרעין?`,
+        work: `לאירוע הראשון: הם צאצאים של הפרוטון שלו. האירוע הוא העץ כולו, 4 מסלולים בו.` },
+      { hint: `אז כמה אירועים וכמה מסלולים?`,
+        work: `3 אירועים, ו-\\(4 + 1 + 1 = 6\\) מסלולים. התשובה: שלושה אירועים.` },
+    ],
+    onDone: () => trapFinished('a'),
+    sayRight: 'נכון. אירוע לכל חלקיק ראשוני.',
+    sayWrong: 'גם אני בלבלתי פעם בין מסלול לאירוע. המשניים שייכים להורה.',
+  });
+
+  const traj = PHY.sims.archTraj($('c-trap2'), $('ctl-trap2'), { locked: true });
+  U.PredictCard($('pc-trap2'), {
+    chapter: CH, id: 'trap2', tag: 'מלכודת 2: הקו על המסך',
+    question: `בחלון של Geant4 רואים קו ירוק לכל נייטרון. מה הקו הזה?`,
+    options: [
+      { text: `המסלול עצמו, ה-G4Track ש-Geant4 העביר.`, why: `ה-G4Track הוא המצב של החלקיק עכשיו: מקום, אנרגיה, צעד. הוא משתנה בכל צעד ונמחק כשהמסלול נגמר, ולכן הוא לא יכול להיות קו שנשאר על המסך.` },
+      { text: `רשומת מסלול (trajectory): נקודות ש-Geant4 שמר בצד, ומצוירות בסוף האירוע.`, correct: true },
+      { text: `קו ישר בין נקודת הלידה לנקודת היציאה, שהמציג משלים.`, why: `אם הנייטרון התפזר, הקו נשבר בכל פיזור: כל נקודה ברשומה היא סוף של צעד. אין שם השלמה.` },
+    ],
+    onRun: () => traj.play(4.5),
+    steps: [
+      { hint: `מה קורה ל-G4Track של הנייטרון כשהמסלול שלו נגמר?`,
+        work: `הוא נמחק: Geant4 עובר למסלול הבא מהמחסנית. בזמן ההובלה הוא החזיק רק את המצב הנוכחי.` },
+      { hint: `אז מה נשאר כדי לצייר?`,
+        work: `כשהוויזואליזציה פועלת, Geant4 בונה תוך כדי ההובלה רשומה נפרדת, ה-trajectory: החלקיק, המספרים שלו, ונקודה בסוף כל צעד. היא נשמרת עם האירוע.` },
+      { hint: `ומתי היא מצוירת?`,
+        work: `בסוף האירוע, כמו בהנפשה: הנקודות נאספו בזמן ההובלה, והקו הופיע רק אחרי שהמסלול כבר נמחק. התשובה: רשומת מסלול.` },
+    ],
+    onDone: () => trapFinished('b'),
+    sayRight: 'נכון. הקו הוא רשומה, לא החלקיק.',
+    sayWrong: 'גם אני חשבתי שאני רואה את המסלול. רואים את מה שנשמר ממנו.',
+  });
+
+  const tsteps = PHY.sims.archTime($('c-trap3'), $('ctl-trap3'), { locked: true });
+  U.PredictCard($('pc-trap3'), {
+    chapter: CH, id: 'trap3', tag: 'מלכודת 3: צעדי זמן',
+    question: `שני נייטרונים יוצאים מה-Be לאורך הציר, אחד של 1 MeV ואחד של 10 MeV, וטסים בוואקום עד קצה העולם. כמה צעדים Geant4 עושה לכל אחד בוואקום?`,
+    options: [
+      { text: `לאיטי בערך פי 3: הוא נמצא בדרך פי 3 יותר זמן.`, why: `זה נכון לסימולציה שמתקדמת בצעדי זמן קבועים. ב-Geant4 אורך הצעד בא מהתהליכים ומהגבולות, לא מהשעון, ובוואקום אין תהליך שיקצר אותו.` },
+      { text: `צעד אחד לכל אחד.`, correct: true },
+      { text: `כ-950 לכל אחד: צעד לכל מילימטר.`, why: `אין ב-Geant4 צעד קבוע במילימטרים. צעד קצר מגיע רק כשתהליך מציע אורך קצר, כמו איבוד אנרגיה של חלקיק טעון.` },
+    ],
+    onRun: () => tsteps.play(4),
+    steps: [
+      { hint: `מה מציעים התהליכים של נייטרון בוואקום?`,
+        work: `הוואקום של Geant4, <code dir="ltr">G4_Galactic</code>, דליל כל כך שהמרחק החופשי הממוצע בו עצום. כל ההצעות של הפיזיקה ארוכות בהרבה מהעולם.` },
+      { hint: `ומה מציעה הגיאומטריה?`,
+        work: `את המרחק עד קצה העולם: מ-47 mm עד 1000 mm, כלומר 953 mm. זו ההצעה הקצרה, ולכן צעד אחד שנגמר ביציאה מהעולם.` },
+      { hint: `ומה עם הזמן?`,
+        work: `Geant4 מחשב את הזמן של נקודת הסיום מהאורך והמהירות: \\(953/13.8 = 69.0\\) ns ל-1 MeV ו-\\(953/43.4 = 22.0\\) ns ל-10 MeV. זמן שונה, אותו מספר צעדים. התשובה: צעד אחד לכל אחד.` },
+    ],
+    onDone: () => trapFinished('c'),
+    sayRight: 'נכון. צעד אחד, בלי קשר לזמן.',
+    sayWrong: 'גם אני חשבתי פעם על צעדי זמן. Geant4 חושב במרחקים.',
+  });
+
+  const thr2 = PHY.sims.archThreads($('c-trap4'), $('ctl-trap4'), { mode: 'trap', locked: true });
+  U.PredictCard($('pc-trap4'), {
+    chapter: CH, id: 'trap4', tag: 'מלכודת 4: עוד הליכים',
+    question: `<code dir="ltr">/run/beamOn 3000000</code> עם <code dir="ltr">-t 10</code> לקח 17.6 שניות. מריצים את אותו מאקרו עם <code dir="ltr">-t 20</code>, על מחשב עם 20 ליבות. מה משתנה?`,
+    options: [
+      { text: `פי 2 אירועים: כל הליך מריץ את המאקרו, ולכן יש יותר נייטרונים.`, why: `כל הליך אכן מקבל את הפקודות, אבל <code dir="ltr">/run/beamOn</code> קובע את מספר האירועים של הריצה כולה, וההליכים מתחלקים בהם.` },
+      { text: `אותם \\(3\\times10^{6}\\) אירועים מתחלקים בין יותר הליכים, וזמן השעון קצר יותר, בערך בחצי.`, correct: true },
+      { text: `שום דבר: ההליכים הם רק שמות בלוג.`, why: `ההליכים רצים באמת במקביל, כל אחד על ליבה. בלוג של ריצת ה-Be רואים עשרה, וכל אחד עיבד בערך עשירית מהאירועים.` },
+    ],
+    onRun: () => thr2.play(5),
+    steps: [
+      { hint: `מה קובע את מספר האירועים בריצה?`,
+        work: `הפקודה <code dir="ltr">/run/beamOn 3000000</code>: \\(3\\times10^{6}\\) אירועים בסך הכול, בלי קשר למספר ההליכים.` },
+      { hint: `מה עושים 20 הליכים עם אותם אירועים?`,
+        work: `מתחלקים בהם: כל הליך מקבל בערך \\(1.5\\times10^{5}\\) אירועים במקום \\(3\\times10^{5}\\), ולכן הריצה מסתיימת בערך בחצי מהזמן.` },
+      { hint: `ומה ראינו בשני הפאנלים?`,
+        work: `אותם 60 אירועים בצעצוע, אותה ספירת נייטרונים, וזמן כמעט חצי. התשובה: אותם אירועים, פחות זמן שעון.` },
+    ],
+    onDone: () => trapFinished('d'),
+    sayRight: 'נכון. אותם אירועים, פחות זמן.',
+    sayWrong: 'גם אני ציפיתי ליותר סטטיסטיקה. הליכים קונים זמן, לא אירועים.',
+  });
+
+  /* ---------- 11. Problems ---------- */
+  const probs = $('problems-host');
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 1: לספור אירוע',
+    text: `פרוטון עושה 38 צעדים, ובאחרון התגובה שלו יוצרת נייטרון, גמא וגרעין. הנייטרון עושה 4 צעדים, הגמא 3 (בראשון שבהם הוא יוצר אלקטרון בפיזור קומפטון), הגרעין צעד אחד, והאלקטרון 2. כמה מסלולים וכמה צעדים יש באירוע?`,
+    fields: [
+      { label: 'מסלולים', answer: 5, unit: '' },
+      { label: 'צעדים', answer: 48, unit: '' },
+    ],
+    steps: [
+      { hint: `אילו חלקיקים הם מסלולים נפרדים?`,
+        work: `כל חלקיק ש-Geant4 מעביר: הפרוטון, ומהתגובה נייטרון, גמא וגרעין, ומהקומפטון אלקטרון. הגמא ממשיך באותו מסלול אחרי הפיזור.` },
+      { hint: `כמה מסלולים זה?`,
+        work: `\\(1 + 3 + 1 = 5\\) מסלולים.` },
+      { hint: `וכמה צעדים בסך הכול?`,
+        work: `\\(38 + 4 + 3 + 1 + 2 = 48\\) צעדים. זה גם מספר הקריאות ל-<code dir="ltr">UserSteppingAction</code> באירוע. התשובה: 5 מסלולים ו-48 צעדים.` },
+    ],
+  });
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 2: קצב של הליך',
+    text: `ריצת ה-Be עיבדה \\(3\\times10^{6}\\) אירועים ב-17.6 שניות על 10 הליכים. כמה אירועים בשנייה עיבד כל הליך, בממוצע?`,
+    fields: [
+      { label: 'קצב להליך', answer: 1.70, unit: '×10⁴ s⁻¹' },
+    ],
+    steps: [
+      { hint: `כמה אירועים בשנייה עיבדה הריצה כולה?`,
+        work: `\\(3\\times10^{6} / 17.6\\ \\text{s} = 1.705\\times10^{5}\\) אירועים בשנייה.` },
+      { hint: `ואיך זה מתחלק בין ההליכים?`,
+        work: `כל הליך מריץ אירועים שלמים בקצב משלו, וביחד הם עשרה: \\(1.705\\times10^{5}/10 = 1.70\\times10^{4}\\) אירועים בשנייה להליך.` },
+      { hint: `בדיקה: מה הזמן הממוצע לאירוע אחד בהליך אחד?`,
+        work: `\\(1/1.70\\times10^{4} = 59\\ \\mu\\text{s}\\) לאירוע: פרוטון אחד עם כל הצעדים שלו. התשובה: \\(1.7\\times10^{4}\\) אירועים בשנייה להליך.` },
+    ],
+  });
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 3: כמה צעדים בריצה',
+    text: `נניח שכל פרוטון עושה 40 צעדים, ושבחלק \\(4.5\\times10^{-4}\\) מהאירועים נוצר נייטרון שעושה עוד 10 צעדים. כמה צעדים יש בריצה של \\(3\\times10^{6}\\) אירועים, וכמה מהם שייכים לנייטרונים?`,
+    fields: [
+      { label: 'כל הצעדים', answer: 1.2, unit: '×10⁸' },
+      { label: 'צעדים של נייטרונים', answer: 1.35, unit: '×10⁴' },
+    ],
+    steps: [
+      { hint: `כמה צעדים עושים הפרוטונים?`,
+        work: `\\(3\\times10^{6}\\cdot 40 = 1.2\\times10^{8}\\) צעדים.` },
+      { hint: `כמה נייטרונים יש בריצה, וכמה צעדים הם מוסיפים?`,
+        work: `\\(3\\times10^{6}\\cdot 4.5\\times10^{-4} = 1350\\) נייטרונים, כפול 10 צעדים: \\(1.35\\times10^{4}\\) צעדים.` },
+      { hint: `ומה הסכום?`,
+        work: `\\(1.2\\times10^{8} + 1.35\\times10^{4} = 1.200135\\times10^{8}\\), כלומר \\(1.2\\times10^{8}\\): הנייטרונים לא מזיזים אפילו את הספרה הרביעית. התשובה: \\(1.2\\times10^{8}\\) צעדים, מהם \\(1.35\\times10^{4}\\) של נייטרונים.` },
+    ],
+  });
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 4: כמה זמן תיקח ריצה',
+    text: `בפרק 1 חישבנו שבשביל שגיאה של 1% צריך \\(2.24\\times10^{7}\\) פרוטונים. כמה זמן שעון תיקח ריצה כזאת על 10 הליכים, בקצב של ריצת ה-Be?`,
+    fields: [
+      { label: 'זמן', answer: 131, unit: 's' },
+    ],
+    steps: [
+      { hint: `מה הקצב של הריצה כולה, מ-17.6 שניות ל-\\(3\\times10^{6}\\) אירועים?`,
+        work: `\\(3\\times10^{6}/17.6\\ \\text{s} = 1.705\\times10^{5}\\) אירועים בשנייה על 10 הליכים.` },
+      { hint: `כמה שניות לוקחים \\(2.24\\times10^{7}\\) אירועים בקצב הזה?`,
+        work: `\\(2.24\\times10^{7}/1.705\\times10^{5} = 131\\ \\text{s}\\).` },
+      { hint: `בדיקה: פי כמה זה מריצת ה-Be?`,
+        work: `\\(2.24\\times10^{7}/3\\times10^{6} = 7.5\\), ו-\\(7.5\\cdot 17.6 = 131\\ \\text{s}\\). התשובה: כ-131 s, קצת יותר משתי דקות.` },
+    ],
+  });
+
+  /* ---------- 12. Quiz ---------- */
+  U.Quiz($('quiz-host'), {
+    chapter: CH, section: 'quiz',
+    questions: [
+      {
+        type: 'mc',
+        q: `מה ה-parent ID של הפרוטון הראשוני של אירוע?`,
+        options: [`0`, `1`, `מספר האירוע`, `אין לו מספר הורה`],
+        answer: 0,
+        steps: [
+          { hint: `מי יצר את הפרוטון הראשוני?`,
+            work: `אף מסלול: המקור, דרך <code dir="ltr">GeneratePrimaries</code>. הוא המסלול הראשון של האירוע, מספר 1.` },
+          { hint: `איזה מספר הורה מסמן "אין הורה"?`,
+            work: `אפס. כך מזהים חלקיק ראשוני, כמו ש-ldns עושה ב-<code dir="ltr">track->GetParentID() == 0</code>. התשובה: 0.` },
+        ],
+      },
+      {
+        type: 'num',
+        q: `בריצה של 1000 אירועים, ב-10 מהם הפרוטון יוצר נייטרון וגמא, ובשאר לא נוצר כלום. כמה פעמים נקראת <code dir="ltr">PreUserTrackingAction</code> בכל הריצה?`,
+        answer: 1020, unit: '',
+        steps: [
+          { hint: `כמה פעמים היא נקראת בכל אירוע?`,
+            work: `פעם אחת לכל מסלול: מסלול אחד באירוע בלי משניים, ושלושה באירוע עם נייטרון וגמא.` },
+          { hint: `נחבר את כל האירועים.`,
+            work: `\\(990\\cdot 1 + 10\\cdot 3 = 1020\\). התשובה: 1020 פעמים.` },
+        ],
+      },
+      {
+        type: 'mc',
+        q: `במחסנית, מלמטה למעלה: 2, 3, 4. מסלול 4 מועבר, ובדרך יוצר משני שמקבל את המספר 5. מי מועבר אחרי שמסלול 4 נגמר?`,
+        options: [`2`, `3`, `5`, `1`],
+        answer: 2,
+        steps: [
+          { hint: `מתי מסלול 5 נכנס למחסנית, ולאיזה מקום בה?`,
+            work: `כשמסלול 4 נגמר, ולראש המחסנית: מעל 2 ו-3.` },
+          { hint: `ומאיפה Geant4 שולף?`,
+            work: `מהראש: אחרון נכנס, ראשון יוצא. התשובה: מסלול 5.` },
+        ],
+      },
+      {
+        type: 'mc',
+        q: `צעד נגמר על הגבול בין Be ל-World. לאיזה נפח שייכת נקודת הסיום שלו, PostStepPoint?`,
+        options: [`ל-Be, הנפח שבו התחיל הצעד`, `ל-World, הנפח שאליו החלקיק נכנס`, `לאף נפח: היא בדיוק על הגבול`, `לממיר כולו`],
+        answer: 1,
+        steps: [
+          { hint: `מה ldns בודק כדי לדעת שנייטרון יצא מהממיר?`,
+            work: `את הנפח של נקודת הסיום: <code dir="ltr">LayerIndex(post->GetPhysicalVolume()) &lt; 0</code>, כלומר שהיא לא שכבה של הממיר.` },
+          { hint: `ומה זה אומר על צעד גבול?`,
+            work: `בצעד שנגמר על גבול, נקודת הסיום כבר שייכת לנפח הבא. התשובה: ל-World.` },
+        ],
+      },
+      {
+        type: 'mc',
+        q: `ldns רץ פעם עם <code dir="ltr">-t 4</code> ופעם עם <code dir="ltr">-t 8</code>, אותו מאקרו ואותו זרע. מה שונה בין שתי הריצות?`,
+        options: [`מספר האירועים`, `מספר הנייטרונים שיצאו`, `זמן השעון וסדר השורות בקובץ`, `שום דבר, אפילו לא הזמן`],
+        answer: 2,
+        steps: [
+          { hint: `מה קובעים <code dir="ltr">/run/beamOn</code> והזרע?`,
+            work: `את מספר האירועים ואת הזרעים של כל אירוע. שניהם זהים בשתי הריצות, ולכן גם התוצאה של כל אירוע.` },
+          { hint: `אז מה כן תלוי במספר ההליכים?`,
+            work: `כמה מהר הריצה נגמרת, ובאיזה סדר אירועים מסיימים וכותבים שורות. התשובה: זמן השעון וסדר השורות.` },
+        ],
+      },
+      {
+        type: 'num',
+        q: `<span class="chip">חזרה מפרק 1</span> ספרנו 1341 נייטרונים, בלי משקלים. מה השגיאה היחסית הסטטיסטית, באחוזים?`,
+        answer: 2.73, unit: '%',
+        steps: [
+          { hint: `מה הפיזור של ספירה של 1341?`,
+            work: `\\(\\sqrt{1341} = 36.6\\).` },
+          { hint: `ומה זה ביחס לספירה?`,
+            work: `\\(36.6/1341 = 0.0273\\). התשובה: 2.73%.` },
+        ],
+      },
+      {
+        type: 'mc',
+        q: `<span class="chip">חזרה מפרק 1</span> תהליך אחד מציע צעד של 12 mm, תהליך שני 3 mm, והגבול הבא נמצא אחרי 5 mm. מה יקרה?`,
+        options: [`צעד של 12 mm, לפי התהליך הראשון`, `צעד של 3 mm שנגמר בתהליך השני`, `צעד של 5 mm: הגבול תמיד קודם`, `צעד באורך הממוצע של ההצעות`],
+        answer: 1,
+        steps: [
+          { hint: `מה הכלל שקובע את אורך הצעד?`,
+            work: `כל תהליך מציע אורך, הגיאומטריה מציעה את המרחק לגבול, וההצעה הקצרה מנצחת.` },
+          { hint: `מה הקצרה כאן?`,
+            work: `\\(\\min(12, 3, 5) = 3\\) mm. התשובה: צעד של 3 mm שנגמר בתהליך השני, לפני הגבול.` },
+        ],
+      },
+    ],
+  });
+
+  U.initChapter({ id: CH });
+})();
+</script>
+</body>
+</html>

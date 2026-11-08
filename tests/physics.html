@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="he" dir="rtl" data-theme="light" data-course="geant4">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>בדיקות פיזיקה</title>
+<link rel="stylesheet" href="../css/style.css">
+<style>
+  body { padding: 16px; }
+  table { border-collapse: collapse; width: 100%; max-width: 980px; font-size: 14px; }
+  td, th { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: right; }
+  td.num { direction: ltr; font-family: monospace; }
+  .ok { color: var(--good); font-weight: 700; }
+  .bad { color: var(--bad); font-weight: 700; }
+  #stage { position: absolute; left: -9999px; top: 0; width: 640px; }
+  #stage canvas { display: block; width: 640px; }
+</style>
+<script>
+  /* Runs the real sims on a manual clock, so results do not depend on tab visibility or frame rate.
+     This must load before js/core/loop.js. */
+  (function () {
+    var queue = [], now = 1000, id = 0;
+    window.requestAnimationFrame = function (fn) { queue.push(fn); return ++id; };
+    window.cancelAnimationFrame = function () {};
+    window.IntersectionObserver = function (cb) {
+      this.observe = function () { Promise.resolve().then(function () { cb([{ isIntersecting: true }]); }); };
+      this.disconnect = this.unobserve = function () {};
+    };
+    window.__frame = function () {
+      now += 50;
+      var run = queue; queue = [];
+      run.forEach(function (fn) { fn(now); });
+    };
+  })();
+</script>
+</head>
+<body>
+<h1>בדיקות פיזיקה</h1>
+<p id="summary">רץ...</p>
+<table><thead><tr><th>בדיקה</th><th>צפוי</th><th>התקבל</th><th></th></tr></thead><tbody id="rows"></tbody></table>
+<div id="stage"></div>
+
+<script src="../js/core/fmt.js"></script>
+<script src="../js/core/vec.js"></script>
+<script src="../js/core/complex.js"></script>
+<script src="../js/core/fft.js"></script>
+<script src="../js/core/pulse.js"></script>
+<script src="../js/core/plot.js"></script>
+<script src="../js/core/progress.js"></script>
+<script src="../js/core/canvas.js"></script>
+<script src="../js/core/loop.js"></script>
+<script src="../js/core/coach.js"></script>
+<script src="../js/core/ui.js"></script>
+<script>
+  /* Test files: tests/core.js (the engine) and tests/chNN.js for every chapter in PHY.course.chapters.
+     A chapter without a test file yet is skipped silently. ?only=NN runs one chapter, ?only=core the engine.
+     A chapter file calls PHY_T.load([...sims relative to js/sims]) and PHY_T.add(async function (T) {...}). */
+  window.PHY_T = {
+    only: new URLSearchParams(location.search).get('only'),
+    tests: [],
+    add: function (fn) { this.tests.push(fn); },
+    load: function (paths) { paths.forEach(function (p) { document.write('<script src="../js/sims/' + p + '"><\/script>'); }); },
+  };
+  (function () {
+    var want = function (n) { return !PHY_T.only || PHY_T.only === n; };
+    if (want('core')) document.write('<script src="core.js"><\/script>');
+    PHY.course.chapters.forEach(function (c) {
+      if (want(c.id)) document.write('<script src="ch' + c.id + '.js" onerror="this.dataset.missing=1"><\/script>');
+    });
+  })();
+</script>
+<script>
+(async function () {
+  var pass = 0, fail = 0;
+  var rows = document.getElementById('rows');
+  var stage = document.getElementById('stage');
+
+  function row(name, expected, got, ok) {
+    if (ok) pass++; else fail++;
+    var tr = document.createElement('tr');
+    [name, expected, got, ok ? '✔' : '✘'].forEach(function (text, i) {
+      var td = document.createElement('td');
+      td.textContent = text;
+      if (i === 1 || i === 2) td.className = 'num';
+      if (i === 3) td.className = ok ? 'ok' : 'bad';
+      tr.appendChild(td);
+    });
+    rows.appendChild(tr);
+  }
+  /* near: absolute tolerance (default 0.01). rel: relative tolerance. same: strict equality. */
+  function near(name, expected, got, tol) {
+    var t = tol === undefined ? 0.01 : tol;
+    var ok = typeof got === 'number' && isFinite(got) && Math.abs(got - expected) <= t;
+    row(name, expected + ' ±' + t, typeof got === 'number' ? String(+got.toPrecision(6)) : String(got), ok);
+  }
+  function rel(name, expected, got, tol) {
+    var t = tol === undefined ? 0.01 : tol;
+    var ok = typeof got === 'number' && isFinite(got) && Math.abs(got - expected) <= t * Math.abs(expected);
+    row(name, expected + ' ±' + t * 100 + '%', typeof got === 'number' ? String(+got.toPrecision(6)) : String(got), ok);
+  }
+  function same(name, expected, got) { row(name, String(expected), String(got), expected === got); }
+  function truthy(name, got) { row(name, 'true', String(!!got), !!got); }
+
+  function make(factory, opts) {
+    var canvas = document.createElement('canvas');
+    var controls = document.createElement('div');
+    stage.appendChild(canvas);
+    stage.appendChild(controls);
+    var sim = factory(canvas, controls, opts);
+    if (sim && sim.start) sim.start();
+    return sim;
+  }
+  /* Pumps frames until the promise settles. Fails rather than hangs if it never does. */
+  async function run(promise, maxFrames) {
+    var done = false, limit = maxFrames || 4000;
+    promise.then(function () { done = true; });
+    for (var i = 0; i < limit && !done; i++) {
+      window.__frame();
+      await Promise.resolve();
+      if (i % 200 === 0) await new Promise(function (r) { setTimeout(r, 0); });
+    }
+    if (!done) throw new Error('animation did not finish');
+  }
+  async function frames(n) { for (var i = 0; i < n; i++) { window.__frame(); await Promise.resolve(); } }
+  async function settle() { for (var i = 0; i < 3; i++) { await Promise.resolve(); window.__frame(); } }
+  async function test(name, fn) {
+    try { await fn(); } catch (e) { row(name, 'ללא שגיאה', String(e && e.message || e), false); }
+  }
+
+  await settle();
+  var T = { near: near, rel: rel, same: same, truthy: truthy, row: row, make: make, run: run, frames: frames, settle: settle, test: test, stage: stage };
+
+  for (var ti = 0; ti < PHY_T.tests.length; ti++) await PHY_T.tests[ti](T);
+  if (!PHY_T.tests.length) row('יש בדיקות להריץ', '≥ 1', '0', false);
+
+  var text = (fail === 0 ? 'PASS ' : 'FAIL ') + pass + '/' + (pass + fail);
+  document.getElementById('summary').textContent = text;
+  document.getElementById('summary').className = fail === 0 ? 'ok' : 'bad';
+  document.title = text;
+  document.documentElement.setAttribute('data-result', fail === 0 ? 'pass' : 'fail');
+  stage.innerHTML = '';
+})().catch(function (e) {
+  document.getElementById('summary').textContent = 'CRASH ' + (e && e.stack || e);
+  document.title = 'FAIL crash';
+  document.documentElement.setAttribute('data-result', 'crash');
+});
+</script>
+</body>
+</html>

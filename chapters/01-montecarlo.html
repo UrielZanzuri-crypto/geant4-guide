@@ -1,0 +1,720 @@
+<!doctype html>
+<html lang="he" dir="rtl" data-course="geant4">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>פרק 1: מונטה קרלו | Geant4 צעד אחר צעד</title>
+<meta name="description" content="מה זה לסמלץ חלקיק: מרחק חופשי ממוצע וחתך פעולה, איך Geant4 בוחר את אורך הצעד, מסלול, אירוע וריצה, ולמה כל תוצאה של מונטה קרלו היא מספר עם שגיאה. פרק אינטראקטיבי עם ממיר הנייטרונים ldns כדוגמה.">
+<script>try{var t=localStorage.getItem('phy-theme');document.documentElement.setAttribute('data-theme',t||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'))}catch(e){document.documentElement.setAttribute('data-theme','light')}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&family=Rubik:wght@500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css">
+<link rel="stylesheet" href="../css/style.css">
+<style>
+  /* Chapter 1 only */
+  .quest-list, .mc-list { margin: 10px 0 0; padding-inline-start: 22px; }
+  .quest-list li, .mc-list li { margin-bottom: 6px; }
+  .step-table-wrap { overflow-x: auto; margin: 2px 0 6px; }
+  .step-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; line-height: 1.4; }
+  .step-table th { font-family: var(--font-head); font-weight: 600; color: var(--ink-soft); text-align: start; padding: 4px 6px; border-bottom: 1.5px solid var(--line-strong); }
+  .step-table td { padding: 5px 6px; border-bottom: 1px solid var(--line); text-align: start; }
+  .step-table td[dir="ltr"] { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.8rem; }
+  .step-table tr.is-phys td { font-weight: 600; }
+  .step-table tbody:empty::after { content: "הטבלה תתמלא אחרי הריצה"; display: block; padding: 6px; color: var(--ink-soft); font-size: 0.85rem; }
+</style>
+</head>
+<body>
+
+<header class="topbar" data-topbar></header>
+
+<main>
+
+<!-- 1. HOOK -->
+<section class="section wrap" data-section="hook" id="hook">
+  <span class="kicker">פרק 1: מונטה קרלו</span>
+  <h1 class="hero-title">אותה סימולציה, פעמיים</h1>
+  <p class="lead">הפרויקט ldns הוא ממיר פרוטונים לנייטרונים: לייזר של 30 J מאיץ פרוטונים, הם פוגעים בדיסקה של בריליום (Be) בעובי 2 mm, ומתוכה יוצאים נייטרונים. בכל הפרקים נחזור לריצה אחת שלו, עם המספרים האמיתיים שלה.</p>
+  <p>בריצה הזאת Geant4 העביר \(3\times10^{6}\) פרוטונים דרך הממיר, ויצאו ממנו 1341 נייטרונים. בגרף זו הנקודה של ריצה 1. עכשיו מריצים את אותו מאקרו שוב, עם זרע (seed) אחר למספרים האקראיים.</p>
+  <div id="pc-hook">
+    <figure class="sim"><canvas id="c-hook"></canvas><div class="sim-controls" id="ctl-hook"></div></figure>
+  </div>
+  <p class="block-gap">זה הלב של שיטת מונטה קרלו (Monte Carlo): התוצאה היא מספר אקראי. Geant4 מגריל בכל צעד של כל חלקיק, ושתי ריצות עם זרעים שונים הן שתי דגימות מאותה התפלגות. לכן תוצאה של סימולציה היא תמיד ערך ושגיאה, והשגיאה היא חלק מהתוצאה.</p>
+  <p>ב-ldns הזרע נקבע בשורת הפקודה. אלה השורות בראש הקובץ <code dir="ltr">ldns.cc</code> שמתעדות את האפשרויות:</p>
+  <pre class="code" dir="ltr">//   options:  -p &lt;physics list&gt;   (default QGSP_BIC_AllHP_EMZ)
+//             -t &lt;threads&gt;        (default: all cores)
+//             -s &lt;seed&gt;           (random seed, default 12345)</pre>
+  <p>ובהמשך אותו קובץ, שורה אחת מעבירה את הזרע למחולל המספרים האקראיים של Geant4:</p>
+  <pre class="code" dir="ltr">  G4Random::setTheSeed(seed);</pre>
+  <p>וכך נראה הסיכום שהריצה האמיתית הדפיסה בסוף, מתוך הקובץ <code dir="ltr">E30J_M2p5_Be2.log</code>:</p>
+  <pre class="code" dir="ltr"> events (source particles): 3000000   (sum of weights 2.99921e+06)
+ neutrons per source particle:
+   created by non-neutron parents: 4.459e-04 +- 9.033e-06
+     layer 0 (Be): 4.459e-04
+   leaving the converter       : 4.470e-04 +- 9.048e-06
+     forward (p_z &gt; 0)         : 2.654e-04 +- 6.907e-06
+ source particles per shot: 4.416e+11
+ neutrons per SHOT leaving: 1.974e+08 +- 3.995e+06</pre>
+  <p>השורה <code dir="ltr">leaving the converter</code> היא \(4.47\times10^{-4} \pm 0.09\times10^{-4}\) נייטרונים לכל פרוטון. כפול \(3\times10^{6}\) פרוטונים זה \(1341 \pm 27\): השגיאה מודפסת יחד עם הערך. היא קצת קטנה מ-\(\sqrt{1341} = 37\), כי בריצה האמיתית המקור הגריל יותר פרוטונים באנרגיות הגבוהות, שם נולדים הנייטרונים, ונתן לכל אחד משקל (weight). את זה נפגוש בפרק 5.</p>
+</section>
+
+<!-- 2. CYCLE: free flight and the mean free path -->
+<section class="section wrap" data-section="freepath" id="freepath">
+  <div class="section-head"><span class="section-num">2</span><h2>טיסה חופשית, ואז אינטראקציה</h2></div>
+  <p>נתחיל מחלקיק ניטרלי, נייטרון, שנכנס לחומר. אין לו מטען, ולכן הוא לא מאבד אנרגיה בדרך: הוא טס ישר עד שהוא פוגע בגרעין. הסיכוי לפגוע תלוי בשני דברים: כמה גרעינים יש בכל סנטימטר מעוקב, וכמה "גדול" כל גרעין נראה לנייטרון.</p>
+  <p>הגודל הזה הוא <b>חתך הפעולה</b> (cross section), \(\sigma\), והיחידה שלו היא barn: \(1\ \text{b} = 10^{-24}\ \text{cm}^2\). למטה <span class="c-n">נייטרונים</span> נכנסים אחד אחד לבלוק עבה של Be, בחתך פעולה של 1 b שבחרנו לצעצוע. לכל נייטרון מוגרל העומק של האינטראקציה הראשונה, וההיסטוגרמה אוספת את העומקים.</p>
+  <div id="pc-free">
+    <figure class="sim"><canvas id="c-free"></canvas><div class="sim-controls" id="ctl-free"></div></figure>
+  </div>
+  <p class="block-gap">המרחק \(\lambda\) נקרא <b>המרחק החופשי הממוצע</b> (mean free path): \(\lambda = 1/(n\sigma)\), כאשר \(n = \rho N_A/A\) הוא מספר הגרעינים בסנטימטר מעוקב. העומק מתפלג לפי \(P(x)\,dx = e^{-x/\lambda}\,dx/\lambda\), והממוצע שלו הוא \(\lambda\). ההיסטוגרמה לא צוירה ביד: כל עמודה סופרת נייטרונים מוגרלים, והעקומה המקווקוות היא הנוסחה.</p>
+  <div data-callout="intuition">
+    <p>נייטרון בחומר הוא כמו הליכה בעיניים עצומות ביער צפוף. בכל צעד יש אותו סיכוי להיתקל בעץ, והיער לא יודע כמה כבר הלכנו. לכן הכי הרבה נתקלים כבר בצעדים הראשונים, ומעטים מגיעים עמוק.</p>
+  </div>
+  <p>איך מגרילים עומק כזה? לוקחים מספר אחיד \(u\) בין 0 ל-1 ומציבים \(x = -\lambda\ln(1-u)\). זו בדיוק ההגרלה ש-Geant4 עושה לכל תהליך, כמו שנראה בסעיף הבא.</p>
+</section>
+
+<!-- 3. CYCLE: the step -->
+<section class="section wrap" data-section="step" id="step">
+  <div class="section-head"><span class="section-num">3</span><h2>הצעד: ההצעה הקצרה מנצחת</h2></div>
+  <p>לנייטרון יש יותר מתהליך אחד (process), וכל תהליך מגריל לעצמו. בשכבה A יש לו פיזור אלסטי (<code dir="ltr">hadElastic</code>) ותגובה לא-אלסטית (<code dir="ltr">neutronInelastic</code>), וכל אחד מציע אורך מההתפלגות המעריכית שלו. גם הגיאומטריה מציעה אורך: המרחק עד הגבול הבא של הנפח.</p>
+  <p>מהאורך שנבחר נוצר <b>צעד</b> (step): הקטע בין שתי נקודות. בסימולציה שתי שכבות סכמטיות, A ו-B, בתוך עולם (World) ריק. שלוש ההצעות לצעד הראשון מצוירות כפסים מנקודת ההתחלה.</p>
+  <div id="pc-step">
+    <figure class="sim"><canvas id="c-step"></canvas><div class="sim-controls" id="ctl-step"></div></figure>
+  </div>
+  <p class="block-gap">זה המנגנון של כל הסימולציה. כל תהליך בדיד מציע \(n_\lambda\,\lambda\), כאשר \(n_\lambda = -\ln u\) הוגרל פעם אחת. תהליך רציף, כמו איבוד אנרגיה של חלקיק טעון, מציע גבול עליון לאורך הצעד, והגיאומטריה מציעה את המרחק לגבול. ההצעה הקצרה מנצחת, וכל שאר התהליכים מורידים מה-\(n_\lambda\) שלהם את מה שנוצל.</p>
+  <p>לצעד יש נקודת התחלה (PreStepPoint) ונקודת סיום (PostStepPoint). צעד שנגמר על גבול הוא צעד בלי פיזיקה: החלקיק רק עובר לנפח הבא. וצעד הוא לא צעד זמן: נייטרון בריק עובר את כל העולם בצעד אחד, ופרוטון שמאט עושה עשרות צעדים קצרים.</p>
+  <div data-callout="intuition">
+    <p>זה כמו אוטובוס שכל אחד מהנוסעים בו הגריל מראש באיזו תחנה ירד. האוטובוס עוצר בתחנה הקרובה מבין ההצעות, ומי שלא ירד ממשיך לספור. גבול בין נפחים הוא מעבר בין שתי ערים: אף אחד לא יורד, אבל מכאן המרחקים בין התחנות אחרים.</p>
+  </div>
+</section>
+
+<!-- 4. CYCLE: track, event, run -->
+<section class="section wrap" data-section="event" id="event">
+  <div class="section-head"><span class="section-num">4</span><h2>מסלול, אירוע, ריצה</h2></div>
+  <p>עכשיו חלקיק טעון: <span class="c-p">פרוטון</span>, כמו אלה של ldns. הוא מאבד אנרגיה כל הזמן, ביינון של האלקטרונים בדרך, ולכן Geant4 מגביל את הצעדים שלו לקטעים קצרים ומוריד אנרגיה בכל אחד. לפעמים צעד אחד נגמר בתגובה גרעינית, וממנה יוצאים חלקיקים חדשים.</p>
+  <p>בהנפשה אירוע סכמטי: פרוטון של 6.3 MeV, האנרגיה החציונית של הפרוטונים שמייצרים נייטרונים בריצת ה-Be, נכנס לממיר. התגובה הלא-אלסטית שלו יוצרת <span class="c-n">נייטרון</span> ו<span class="c-g">גמא</span>, והגמא עושה בדרך פיזור קומפטון אחד ויוצא.</p>
+  <div id="pc-event">
+    <figure class="sim"><canvas id="c-event"></canvas><div class="sim-controls" id="ctl-event"></div></figure>
+  </div>
+  <p class="block-gap">שלוש מילים שנשתמש בהן בכל האתר. <b>מסלול</b> (track) הוא חלקיק אחד בזמן שהוא מועבר בחומר: יש לו מספר (track ID), מספר ההורה (parent ID), התהליך שיצר אותו (creator process) ו<b>משקל סטטיסטי</b> (weight). <b>אירוע</b> (event) הוא חלקיק ראשוני אחד וכל הצאצאים שלו, כל העץ. <b>ריצה</b> (run) היא הרבה אירועים עם אותה גיאומטריה ואותה פיזיקה: בריצת ה-Be היו \(3\times10^{6}\) אירועים.</p>
+  <p>העץ הוא גם הדרך לענות על השאלה "מאיפה בא הנייטרון". ldns רושם לכל נייטרון את התהליך שיצר אותו, ובריצה האמיתית 98.6% מהנייטרונים נוצרו ב-<code dir="ltr">protonInelastic</code> על ⁹Be.</p>
+  <div data-callout="intuition">
+    <p>אירוע הוא כמו עץ משפחה. הפרוטון הוא האב הקדמון, כל מסלול הוא אדם אחד עם תעודת זהות ושם של הורה, וריצה היא מפקד של מיליוני משפחות.</p>
+  </div>
+</section>
+
+<!-- 5. CYCLE: statistics -->
+<section class="section wrap" data-section="stats" id="stats">
+  <div class="section-head"><span class="section-num">5</span><h2>למה כל תוצאה היא מספר עם שגיאה</h2></div>
+  <p>נחזור לשאלה של הפתיחה, הפעם עם צעצוע: כל פרוטון מייצר נייטרון בהסתברות \(p = 1\%\) (בממיר האמיתי \(p = 4.47\times10^{-4}\), ונגיע אליו). אחרי \(N\) פרוטונים ההערכה היא \(\hat p = k/N\), כאשר \(k\) הוא מספר הנייטרונים שנספרו.</p>
+  <p>בגרף נראה את ההערכה משתנה בזמן שהפרוטונים מצטברים, ואת פס השגיאה סביבה. ציר ה-x לוגריתמי: כל שנתה היא פי 10 פרוטונים.</p>
+  <div id="pc-stats">
+    <figure class="sim"><canvas id="c-stats"></canvas><div class="sim-controls" id="ctl-stats"></div></figure>
+  </div>
+  <p class="block-gap">הכלל: השגיאה היחסית של ספירה היא אחד חלקי השורש של מספר הספירות, \(1/\sqrt{Np}\). שגיאה קטנה פי 2 עולה פי 4 בזמן ריצה, וספרה נוספת עולה פי 100. לכן כדאי לחשב לפני שמריצים כמה אירועים צריך: בתרגיל 3 נראה שבשביל 1% על תפוקה של \(4.47\times10^{-4}\) צריך \(2.24\times10^{7}\) פרוטונים.</p>
+  <p>ומה כשלכל נייטרון יש משקל? אז מחשבים לכל אירוע את \(x_i\), סכום המשקלים של הנייטרונים שהוא יצר, והשגיאה באה מהפיזור של \(x_i\) בין האירועים, לא מהשורש של מספר השורות. כך ldns מחשב את השגיאה שהוא מדפיס. זה הקטע מ-<code dir="ltr">src/RunAction.cc</code>:</p>
+  <pre class="code" dir="ltr">// mean and standard error of the mean from per-event sums
+std::pair&lt;G4double, G4double&gt; MeanErr(G4double s, G4double s2, G4int n)
+{
+  if (n &lt;= 0) return {0., 0.};
+  const G4double m = s / n;
+  const G4double var = std::max(s2 / n - m * m, 0.);
+  return {m, std::sqrt(var / n)};
+}</pre>
+  <p>כאן <code dir="ltr">s</code> הוא \(\sum x_i\), <code dir="ltr">s2</code> הוא \(\sum x_i^2\), ו-<code dir="ltr">n</code> מספר האירועים. יוצאים הממוצע, השונות בין האירועים, ושגיאת הממוצע \(\sqrt{\text{var}/n}\).</p>
+  <div data-callout="intuition">
+    <p>זה כמו סקר בחירות: כדי להקטין את טעות הסקר פי 2 צריך פי 4 משיבים. לכן סקר מדויק באמת הוא יקר, וגם ריצה מדויקת באמת.</p>
+  </div>
+</section>
+
+<!-- 6. CYCLE: why Monte Carlo -->
+<section class="section wrap" data-section="why" id="why">
+  <div class="section-head"><span class="section-num">6</span><h2>למה מגרילים, ולא פותרים נוסחה</h2></div>
+  <p>יש שאלות שקל לשאול ואין להן נוסחה. נתחיל בשאלה שיש לה, כדי לבדוק את השיטה: חישוב של π. זורקים חיצים אקראיים לריבוע של 1 על 1, ובתוכו רבע עיגול ברדיוס 1.</p>
+  <p>השטח של רבע העיגול הוא \(\pi/4\). לכן החלק של החיצים שנוחתים בתוכו, כפול 4, הוא הערכה של π.</p>
+  <div id="pc-why">
+    <figure class="sim"><canvas id="c-why"></canvas><div class="sim-controls" id="ctl-why"></div></figure>
+  </div>
+  <p class="block-gap">השיטה נקראת <b>אינטגרציה במונטה קרלו</b>: שטח, או כל אינטגרל, הוא ממוצע של הגרלות. השגיאה יורדת כמו \(1/\sqrt N\) לא משנה כמה ממדים יש לבעיה, ובזה כל הכוח שלה. מסלול של פרוטון ב-Geant4 הוא "חץ" אחד בבעיה עם אלפי ממדים: כל הגרלה בכל צעד היא עוד ממד.</p>
+  <p>ומה אין לו נוסחה? בממיר של ldns, כמעט הכול ביחד:</p>
+  <ul class="mc-list">
+    <li><b>פיזור מרובה</b> (multiple scattering): הפרוטון מתפזר קצת בכל צעד, והמסלול שלו לא ישר.</li>
+    <li><b>חלקיקים משניים</b> (secondaries): כל נייטרון יכול לפגוע שוב, ליצור גמא או לצאת, וכל אחד מהם הוא עוד מסלול.</li>
+    <li><b>תגובות עם כמה נייטרונים</b>, כמו \((n,2n)\): המספר והאנרגיות של התוצרים הם הגרלה בפני עצמה.</li>
+    <li><b>גיאומטריה</b>: דיסקה ברדיוס 22 mm, קונוס של פרוטונים, שכבות, ובפרקים הבאים גם מאט. כל גבול משנה את החשבון.</li>
+    <li><b>התפלגויות זוויתיות</b>: כל תגובה שולחת את התוצרים לכיוונים אחרים, לפי הנתונים הגרעיניים.</li>
+  </ul>
+  <p>כל אחד מאלה לבד אפשר לפעמים לפתור בעט ונייר. את כולם ביחד, בשביל \(4.42\times10^{11}\) פרוטונים בירייה אחת של הלייזר, רק מגרילים.</p>
+</section>
+
+<!-- 7. EARNED FORMULAS -->
+<section class="section wrap" data-section="formula" data-passive id="formula">
+  <div class="section-head"><span class="section-num">7</span><h2>הנוסחאות שהרווחנו</h2></div>
+  <p>כל מה שכאן כבר רץ על המסך. עכשיו רק נותנים לזה שמות, שורה לכל סמל.</p>
+
+  <div class="formula-card">
+    <h3>חתך פעולה ומרחק חופשי ממוצע</h3>
+    <div class="formula-main">\[n = \frac{\rho\,N_A}{A}\] \[\lambda = \frac{1}{n\sigma}\] \[P(x)\,dx = e^{-x/\lambda}\,\frac{dx}{\lambda}\]</div>
+    <table class="symbol-table">
+      <thead><tr><th>סמל</th><th>משמעות</th><th>יחידה</th></tr></thead>
+      <tbody>
+        <tr><td class="sym">\(n\)</td><td>גרעינים בסנטימטר מעוקב (ובתרכובת: יחידות נוסחה, כמו LiF).</td><td class="unit">cm⁻³</td></tr>
+        <tr><td class="sym">\(\rho\)</td><td>צפיפות החומר.</td><td class="unit">g/cm³</td></tr>
+        <tr><td class="sym">\(N_A\)</td><td>מספר אבוגדרו, \(6.022\times10^{23}\).</td><td class="unit">mol⁻¹</td></tr>
+        <tr><td class="sym">\(A\)</td><td>מסה מולרית של אטום או של יחידת נוסחה.</td><td class="unit">g/mol</td></tr>
+        <tr><td class="sym">\(\sigma\)</td><td>חתך פעולה: השטח האפקטיבי של גרעין אחד, \(1\ \text{b} = 10^{-24}\ \text{cm}^2\).</td><td class="unit">b</td></tr>
+        <tr><td class="sym">\(\lambda\)</td><td>מרחק חופשי ממוצע: העומק הממוצע של האינטראקציה הראשונה.</td><td class="unit">mm</td></tr>
+        <tr><td class="sym">\(x\)</td><td>העומק שבו קרתה האינטראקציה הראשונה.</td><td class="unit">mm</td></tr>
+      </tbody>
+    </table>
+    <p class="not-say"><b>מה הנוסחה לא אומרת:</b> שחתך הפעולה קבוע. הוא תלוי באנרגיה, ובחומר עם כמה איזוטופים או כמה תהליכים מחברים את הכול: \(1/\lambda = \sum_i n_i\sigma_i\). Geant4 מחשב את \(\lambda\) מחדש בכל צעד, לפי האנרגיה והחומר באותו רגע.</p>
+  </div>
+
+  <div class="formula-card">
+    <h3>שגיאה סטטיסטית</h3>
+    <div class="formula-main">\[\frac{\delta}{\mu} = \frac{1}{\sqrt{N p}}\] \[\sigma_{\bar x} = \sqrt{\frac{\overline{x^2} - \bar x^{\,2}}{N}}\] \[k = 0 \;\Rightarrow\; p < \frac{3}{N}\ \ (95\%)\]</div>
+    <table class="symbol-table">
+      <thead><tr><th>סמל</th><th>משמעות</th><th>יחידה</th></tr></thead>
+      <tbody>
+        <tr><td class="sym">\(N\)</td><td>מספר האירועים, כאן פרוטונים שנורו.</td><td class="unit"></td></tr>
+        <tr><td class="sym">\(p\)</td><td>הסיכוי של אירוע לתת נייטרון, כלומר התפוקה לפרוטון.</td><td class="unit"></td></tr>
+        <tr><td class="sym">\(\mu = Np\)</td><td>מספר הספירות הצפוי. \(\delta\) הוא הפיזור שלו, \(\sqrt{\mu}\).</td><td class="unit"></td></tr>
+        <tr><td class="sym">\(x_i\)</td><td>סכום המשקלים של הנייטרונים שאירוע \(i\) יצר.</td><td class="unit"></td></tr>
+        <tr><td class="sym">\(\bar x\)</td><td>הממוצע של \(x_i\): התפוקה לפרוטון בריצה עם משקלים.</td><td class="unit"></td></tr>
+        <tr><td class="sym">\(\sigma_{\bar x}\)</td><td>שגיאת הממוצע, מהפיזור בין האירועים.</td><td class="unit"></td></tr>
+        <tr><td class="sym">\(k\)</td><td>מספר הספירות שיצאו בפועל.</td><td class="unit"></td></tr>
+      </tbody>
+    </table>
+    <p class="not-say"><b>מה הנוסחה לא אומרת:</b> שהתוצאה נכונה. השגיאה הסטטיסטית אומרת כמה עוד הגרלות יזיזו את המספר, לא אם הפיזיקה או הגיאומטריה נכונות. את זה בודקים מול נתונים ומדידות, בפרקים 4 ו-8.</p>
+  </div>
+
+  <div data-callout="lab">
+    <p>ריצת ה-Be של ldns, שנחזור אליה בכל האתר:</p>
+    <table class="lab-table">
+      <tbody>
+        <tr><th>ממיר</th><td class="v">Be 2 mm, r = 22 mm, z = 45 mm</td></tr>
+        <tr><th>רשימת פיזיקה</th><td class="v">QGSP_BIC_AllHP_EMZ</td></tr>
+        <tr><th>אירועים</th><td class="v">3×10⁶</td></tr>
+        <tr><th>נייטרונים יוצאים לפרוטון</th><td class="v">4.47×10⁻⁴ ± 0.09×10⁻⁴</td></tr>
+        <tr><th>שגיאה יחסית</th><td class="v">2.0 %</td></tr>
+        <tr><th>פרוטונים בירייה</th><td class="v">4.42×10¹¹</td></tr>
+        <tr><th>נייטרונים בירייה</th><td class="v">1.97×10⁸ ± 0.04×10⁸</td></tr>
+        <tr><th>מאיפה הנייטרונים</th><td class="v">98.6 % protonInelastic, ⁹Be</td></tr>
+        <tr><th>צפיפות האטומים של Be</th><td class="v">1.235×10²³ cm⁻³</td></tr>
+      </tbody>
+    </table>
+    <p class="small muted">השגיאה היחסית היא \(0.09/4.47\). הצפיפות מ-\(\rho = 1.848\ \text{g/cm}^3\) ו-\(A = 9.012\ \text{g/mol}\), כמו בתרגיל 1.</p>
+  </div>
+</section>
+
+<!-- 8. PLAYGROUND -->
+<section class="section wrap-wide" data-section="playground" id="playground">
+  <div class="section-head"><span class="section-num">8</span><h2>מעבדת הצעדים</h2></div>
+  <p>חמישה חומרים שנפגוש באתר, חתך פעולה בסקלה לוגריתמית, מעשירית barn ועד 10 b, ומספר החלקיקים. הקו המקווקו הסגול בבלוק הוא העומק \(d\), והקריאות משוות את החלק שפגע לפניו לנוסחה. כמה דברים שכדאי לבדוק:</p>
+  <ul class="quest-list">
+    <li>לבחור Pb ואחר כך Be, עם אותו \(\sigma\). למה ל-Pb, הצפוף פי 6, יש מרחק חופשי ארוך יותר?</li>
+    <li>להגדיל את \(N\) פי 100. פי כמה קטנה השגיאה על העומק הממוצע?</li>
+    <li>לשים \(d = 2\) mm, העובי של ממיר ה-Be. כש-\(\lambda\) ארוך בהרבה, איזה חלק מהחלקיקים פוגע בשכבה?</li>
+    <li>למצוא את \(\sigma\) שבו \(\lambda\) של Be הוא 10 mm.</li>
+  </ul>
+  <figure class="sim block-gap"><canvas id="c-lab"></canvas><div class="sim-controls" id="ctl-lab"></div></figure>
+</section>
+
+<!-- 9. GAME -->
+<section class="section wrap-wide" data-section="game" id="game">
+  <div class="section-head"><span class="section-num">9</span><h2>אתגר: לנחש את λ</h2></div>
+  <p>בכל שלב חומר אחר וחתך פעולה אחר, ואנחנו צריכים למצוא את המרחק החופשי הממוצע. בשלב הראשון מספיקה העין, בשני הבלוק דק וחלק מהחלקיקים עוברים אותו, ובשלישי קודם מחשבים.</p>
+  <p class="muted small">בדיקה ראשונה שמצליחה שווה 3 נקודות, שנייה 2, ואחר כך 1. הכוכבים נקבעים מסכום הנקודות, והחומרים משתנים בכל סיבוב.</p>
+  <figure class="sim"><canvas id="c-game"></canvas><div class="sim-controls" id="ctl-game"></div></figure>
+</section>
+
+<!-- 10. TRAPS -->
+<section class="section wrap" data-section="traps" id="traps">
+  <div class="section-head"><span class="section-num">10</span><h2>מלכודות</h2></div>
+  <p>ארבע טעויות שחוזרות גם אצל מי שמריצים Geant4 כל יום. עדיף ליפול בהן כאן, איפה שזה לא עולה שעות של ריצה.</p>
+  <div id="pc-trap1">
+    <figure class="sim"><canvas id="c-trap1"></canvas><div class="sim-controls" id="ctl-trap1"></div></figure>
+  </div>
+  <div id="pc-trap2">
+    <figure class="sim"><canvas id="c-trap2"></canvas><div class="sim-controls" id="ctl-trap2"></div></figure>
+  </div>
+  <div id="pc-trap3">
+    <figure class="sim"><canvas id="c-trap3"></canvas><div class="sim-controls" id="ctl-trap3"></div></figure>
+  </div>
+  <p>ככה זה נראה בלוג של ריצת ה-Be: כל אירוע מתחיל עם זוג זרעים משלו, לא משנה איזה הליך (<code dir="ltr">G4WT</code>) קיבל אותו.</p>
+  <pre class="code" dir="ltr">G4WT2 &gt; --&gt; Event 500000 starts with initial seeds (56933348,14847662).
+G4WT3 &gt; --&gt; Event 1000000 starts with initial seeds (13518119,75113947).
+G4WT5 &gt; --&gt; Event 1500000 starts with initial seeds (95552120,53726648).
+G4WT1 &gt; --&gt; Event 2000000 starts with initial seeds (10822275,79665705).
+G4WT1 &gt; --&gt; Event 2500000 starts with initial seeds (87975087,33606689).</pre>
+  <div id="pc-trap4">
+    <figure class="sim"><canvas id="c-trap4"></canvas><div class="sim-controls" id="ctl-trap4"></div></figure>
+  </div>
+</section>
+
+<!-- 11. PROBLEMS -->
+<section class="section wrap" data-section="problems" id="problems">
+  <div class="section-head"><span class="section-num">11</span><h2>תרגילים</h2></div>
+  <p>חמישה חישובים שעושים לפני ריצה אמיתית, עם המספרים של ממיר ה-Be. כדאי לנסות לבד, ולפתוח רמז רק כשנתקעים.</p>
+  <div id="problems-host"></div>
+</section>
+
+<!-- 12. QUIZ -->
+<section class="section wrap" data-section="quiz" id="quiz">
+  <div class="section-head"><span class="section-num">12</span><h2>בוחן</h2></div>
+  <p>חמש שאלות על הפרק. הציון הטוב ביותר נשמר, ואפשר לנסות שוב כמה פעמים שרוצים.</p>
+  <div id="quiz-host" class="block-gap"></div>
+</section>
+
+<!-- 13. POCKET CARD -->
+<section class="section wrap" data-section="pocket" data-passive id="pocket">
+  <div class="section-head"><span class="section-num">13</span><h2>כרטיס כיס</h2></div>
+  <div class="pocket">
+    <h3>מונטה קרלו על כף היד</h3>
+    <div class="pocket-grid">
+      <div class="pocket-item"><b>חתך פעולה:</b> \(n = \rho N_A/A\), \(\lambda = 1/(n\sigma)\), \(1\ \text{b} = 10^{-24}\ \text{cm}^2\). Be עם 1 b: \(\lambda = 81\) mm.</div>
+      <div class="pocket-item"><b>עומק:</b> \(P(x) = e^{-x/\lambda}/\lambda\), הממוצע \(\lambda\). מגרילים \(x = -\lambda\ln(1-u)\). בשכבה דקה פוגע החלק \(x/\lambda\).</div>
+      <div class="pocket-item"><b>צעד:</b> הקצר מבין ההצעות של התהליכים והמרחק לגבול. צעד שנגמר על גבול הוא צעד בלי פיזיקה.</div>
+      <div class="pocket-item"><b>מסלול, אירוע, ריצה:</b> חלקיק אחד; חלקיק ראשוני וכל הצאצאים שלו; הרבה אירועים עם אותה גיאומטריה ופיזיקה.</div>
+      <div class="pocket-item"><b>שגיאה:</b> \(1/\sqrt{\text{counts}}\). פי 2 דיוק עולה פי 4 אירועים. עם משקלים: מהפיזור בין האירועים.</div>
+      <div class="pocket-item"><b>אפס ספירות:</b> לא אפס תפוקה, אלא \(p < 3/N\) בביטחון של 95%.</div>
+      <div class="pocket-item"><b>זרע:</b> <code dir="ltr">-s</code> בשורת הפקודה של ldns. אותו זרע נותן אותם מספרים, גם עם מספר אחר של הליכים (<code dir="ltr">-t</code>).</div>
+      <div class="pocket-item"><b>ריצת ה-Be:</b> \(4.47\times10^{-4} \pm 0.09\times10^{-4}\) נייטרונים לפרוטון, \(1.97\times10^{8}\) לירייה.</div>
+    </div>
+    <div class="pocket-quote">"מספר בלי שגיאה הוא עוד לא תוצאה."</div>
+  </div>
+</section>
+
+</main>
+
+<div data-chapter-nav></div>
+<footer data-footer></footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/contrib/auto-render.min.js"></script>
+<script src="../js/core/fmt.js"></script>
+<script src="../js/core/vec.js"></script>
+<script src="../js/core/complex.js"></script>
+<script src="../js/core/fft.js"></script>
+<script src="../js/core/pulse.js"></script>
+<script src="../js/core/plot.js"></script>
+<script src="../js/core/progress.js"></script>
+<script src="../js/core/canvas.js"></script>
+<script src="../js/core/loop.js"></script>
+<script src="../js/core/coach.js"></script>
+<script src="../js/core/ui.js"></script>
+<script src="../js/sims/ch01/kit.js"></script>
+<script src="../js/sims/ch01/mc-runs.js"></script>
+<script src="../js/sims/ch01/mc-slab.js"></script>
+<script src="../js/sims/ch01/mc-step.js"></script>
+<script src="../js/sims/ch01/mc-event.js"></script>
+<script src="../js/sims/ch01/mc-converge.js"></script>
+<script src="../js/sims/ch01/mc-darts.js"></script>
+<script src="../js/sims/ch01/mc-lambda-game.js"></script>
+<script src="../js/sims/ch01/mc-compare.js"></script>
+<script src="../js/sims/ch01/mc-threads.js"></script>
+<script src="../js/sims/ch01/mc-zero.js"></script>
+<script>
+(function () {
+  'use strict';
+  const CH = '01';
+  const U = PHY.ui;
+  const $ = (id) => document.getElementById(id);
+  const TAG = 'הניחוש שלנו';
+
+  /* ---------- 1. Hook: the same run with a new seed ---------- */
+  const runs = PHY.sims.mcRuns($('c-hook'), $('ctl-hook'), { N: 3e6, p: 4.47e-4, first: 1341, runs: 20, locked: true, chapter: CH, section: 'hook' });
+  U.PredictCard($('pc-hook'), {
+    chapter: CH, id: 'hook', section: 'hook', tag: TAG,
+    question: `אותו מאקרו, אותו ממיר, אותם \\(3\\times10^{6}\\) פרוטונים, רק זרע אחר. כמה נייטרונים יצאו בריצה השנייה?`,
+    options: [
+      { text: `בדיוק 1341. אותו מאקרו, אותה פיזיקה, אותו מחשב: מאיפה יבוא שינוי?`, why: `השינוי בא מהזרע. Geant4 מגריל בכל צעד, והזרע קובע את רצף ההגרלות. זרע אחר נותן רצף אחר, ולכן גם ספירה קצת אחרת.` },
+      { text: `בערך 1341, פלוס מינוס כמה עשרות.`, correct: true },
+      { text: `כל מספר, מאפס ועד אלפים: זו הגרלה.`, why: `ההגרלה היא של כל פרוטון לחוד. מיליוני הגרלות קטנות מתמצעות, והסכום יציב: הפיזור הוא בסביבות 37, לא אלפים.` },
+    ],
+    onRun: () => runs.play(3.5),
+    steps: [
+      { hint: `מה Geant4 מגריל בכל פרוטון, ומה קובע את רצף ההגרלות?`,
+        work: `בכל צעד של כל פרוטון Geant4 מגריל מספרים אקראיים: איפה תהיה האינטראקציה, איזה תהליך יקרה, לאן ייצאו התוצרים. את הרצף קובע הזרע: זרע אחר נותן רצף אחר, ולכן ספירה אחרת.` },
+      { hint: `כל פרוטון נותן נייטרון בסיכוי קטן מאוד. איזה פיזור יש לספירה של הרבה אירועים נדירים ובלתי תלויים?`,
+        work: `ספירה כזאת מתפלגת לפי פואסון (Poisson): אם התוחלת היא \\(\\mu\\), סטיית התקן היא \\(\\sqrt{\\mu}\\). כאן \\(\\mu = 3\\times10^{6}\\cdot 4.47\\times10^{-4} = 1341\\), ולכן \\(\\sqrt{1341} = 36.6\\).` },
+      { hint: `מה ראינו ב-20 הריצות?`,
+        work: `הממוצע יצא קרוב ל-1341 וסטיית התקן קרובה ל-37: מספר אחר בכל ריצה, אבל לא רחוק. התשובה: בערך \\(1341 \\pm 37\\).` },
+    ],
+    explanation: `<p>הכפתור "עוד 20 ריצות" פתוח, וגם המתג "אותו זרע". מה קורה לפיזור כששתי ריצות מקבלות את אותו זרע?</p>`,
+    sayRight: 'נכון. מספר אחר בכל ריצה, אבל בתוך כמה עשרות.',
+    sayWrong: 'גם אני ציפיתי לאותו מספר בפעם הראשונה. הזרע עושה את ההבדל.',
+  });
+
+  /* ---------- 2. Free flight ---------- */
+  const slab = PHY.sims.mcSlab($('c-free'), $('ctl-free'), { mode: 'card', material: 'Be', sigma: 1, N: 2000, X: 300, locked: true, chapter: CH, section: 'freepath' });
+  U.PredictCard($('pc-free'), {
+    chapter: CH, id: 'freepath', section: 'freepath', tag: TAG,
+    question: `נייטרונים נכנסים אחד אחד לבלוק עבה של Be. איפה יהיו רוב האינטראקציות הראשונות שלהם?`,
+    options: [
+      { text: `סביב עומק אחד אופייני: כל נייטרון עובר בערך אותו מרחק, ואז פוגע.`, why: `ככה זה עם כדור שנזרק בכוח קבוע. אבל לנייטרון אין זיכרון: בכל מילימטר יש לו אותו סיכוי לפגוע, לא משנה כמה כבר עבר. אין עומק שבו "מגיע הזמן".` },
+      { text: `בערך באופן אחיד לאורך הבלוק: לכל מילימטר אותו סיכוי.`, why: `חצי נכון. לכל נייטרון שמגיע למילימטר מסוים יש בו אותו סיכוי. אבל לעומק מגיעים פחות נייטרונים, כי חלק כבר פגעו בדרך.` },
+      { text: `הכי הרבה ממש בכניסה, ופחות ופחות ככל שמעמיקים.`, correct: true },
+    ],
+    onRun: () => slab.play(3.5),
+    steps: [
+      { hint: `אם בכל מילימטר הסיכוי לפגוע קבוע, מה קורה למספר הנייטרונים שעוד לא פגעו?`,
+        work: `בכל מילימטר פוגע אותו חלק מהנייטרונים שנשארו, \\(dx/\\lambda\\). חלק קבוע ממה שנשאר זו דעיכה מעריכית: \\(N(x) = N_0\\,e^{-x/\\lambda}\\).` },
+      { hint: `כמה אינטראקציות יש בשכבה דקה בעומק \\(x\\)?`,
+        work: `מספר הנייטרונים שמגיעים לעומק \\(x\\), כפול הסיכוי \\(dx/\\lambda\\): \\(N_0\\,e^{-x/\\lambda}\\,dx/\\lambda\\). זה הכי גדול ב-\\(x = 0\\) ויורד מעריכית, בדיוק כמו העקומה המקווקוות.` },
+      { hint: `ומה העומק הממוצע? מה \\(\\lambda\\) של Be עם 1 b?`,
+        work: `הממוצע של התפלגות מעריכית הוא \\(\\lambda\\). ב-Be: \\(n = 1.848\\cdot 6.022\\times10^{23}/9.012 = 1.235\\times10^{23}\\ \\text{cm}^{-3}\\), ו-\\(\\lambda = 1/(1.235\\times10^{23}\\cdot 10^{-24}) = 8.10\\ \\text{cm}\\), כלומר 81.0 mm. התשובה: הכי הרבה בכניסה, ודעיכה מעריכית פנימה.` },
+    ],
+    explanation: `<p>הסליידרים פתוחים. מה קורה ל-\\(\\lambda\\) כשמכפילים את חתך הפעולה? וכשמכפילים את הצפיפות?</p>`,
+    sayRight: 'נכון. הכי הרבה בכניסה, ודעיכה מעריכית.',
+    sayWrong: 'גם אני דמיינתי עומק אופייני. לנייטרון אין זיכרון.',
+  });
+
+  /* ---------- 3. The step ---------- */
+  const step = PHY.sims.mcStep($('c-step'), $('ctl-step'), { locked: true, rng: PHY.random(42).next, chapter: CH, section: 'step' });
+  U.PredictCard($('pc-step'), {
+    chapter: CH, id: 'step', section: 'step', tag: TAG,
+    question: `בצעד הראשון הפיזור האלסטי מציע 35 mm, התגובה הלא-אלסטית 120 mm, והגיאומטריה 20 mm עד הגבול בין A ל-B. מה יקרה בסוף הצעד?`,
+    options: [
+      { text: `פיזור אלסטי אחרי 35 mm. הגבול הוא רק קו בציור, והפיזיקה קובעת.`, why: `הגבול הוא לא רק קו: אחריו יש חומר אחר, עם \\(\\lambda\\) אחר. Geant4 חייב לעצור עליו כדי לחשב את ההצעות מחדש בחומר החדש.` },
+      { text: `הצעד נגמר על הגבול אחרי 20 mm, בלי שום אינטראקציה, והנייטרון ממשיך ל-B בצעד חדש.`, correct: true },
+      { text: `Geant4 מתקדם בצעדים קטנים וקבועים, נגיד 0.1 mm, ובכל אחד בודק אם קרה משהו.`, why: `ככה עובדת סימולציה של תנועה בזמן, עם \\(dt\\) קבוע. ב-Geant4 אורך הצעד בא מההצעות של התהליכים ומהגבולות, ולכן נייטרון בריק חוצה את כל העולם בצעד אחד.` },
+    ],
+    onRun: () => step.play(2.6),
+    steps: [
+      { hint: `מה הכלל: מי קובע את אורך הצעד?`,
+        work: `כל תהליך מציע אורך, והגיאומטריה, דרך התהליך Transportation, מציעה את המרחק עד הגבול. הקצר מכולם מנצח: \\(\\min(35, 120, 20) = 20\\) mm.` },
+      { hint: `מה קורה בנקודת הסיום, כשהמנצח הוא הגבול?`,
+        work: `שום אינטראקציה. נקודת ההתחלה של הצעד (PreStepPoint) ב-A, ונקודת הסיום (PostStepPoint) על הגבול, והנפח הבא הוא B. ההצעות של הפיזיקה לא נזרקות: כל תהליך זוכר כמה מרחקים חופשיים ממוצעים נשארו לו.` },
+      { hint: `כמה נשאר לכל תהליך אחרי 20 mm, ומה הוא יציע ב-B?`,
+        work: `האלסטי הגריל \\(0.7\\lambda\\) עם \\(\\lambda_A = 50\\) mm, וניצל \\(20/50 = 0.4\\): נשארו \\(0.3\\lambda\\). הלא-אלסטי: \\(0.6 - 20/200 = 0.5\\). ב-B, עם \\(\\lambda_B = 25\\) mm ו-100 mm, הם יציעו \\(0.3\\cdot 25 = 7.5\\) mm ו-\\(0.5\\cdot 100 = 50\\) mm. התשובה: הצעד נגמר על הגבול אחרי 20 mm בלי אינטראקציה, והנייטרון ממשיך ל-B.` },
+    ],
+    explanation: `<p>הכפתור "הצעד הבא" פתוח. בצעד השני נראה איך השארית מ-A הופכת להצעה ב-B, ואחר כך איך המסלול נגמר כשהנייטרון יוצא מהעולם.</p>`,
+    sayRight: 'נכון. גבול עוצר את הצעד, בלי שום פיזיקה.',
+    sayWrong: 'גם אני חשבתי פעם שהגבול הוא רק ציור. Geant4 עוצר עליו תמיד.',
+  });
+
+  /* ---------- 4. Track, event, run ---------- */
+  const ev = PHY.sims.mcEvent($('c-event'), $('ctl-event'), { locked: true, chapter: CH, section: 'event' });
+  U.PredictCard($('pc-event'), {
+    chapter: CH, id: 'event', section: 'event', tag: TAG,
+    question: `באירוע הזה הפרוטון מאט, התגובה הלא-אלסטית שלו יוצרת נייטרון וגמא, והגמא עושה פיזור קומפטון אחד ויוצא. כמה מסלולים (tracks) יש באירוע?`,
+    options: [
+      { text: `אחד: האירוע הוא הפרוטון, וכל השאר הם חלק ממנו.`, why: `האירוע באמת מתחיל בפרוטון אחד. אבל כל חלקיק ש-Geant4 מעביר בחומר הוא מסלול נפרד, עם מספר משלו ועם מספר ההורה שלו.` },
+      { text: `שלושה: פרוטון, נייטרון וגמא.`, why: `אלה שלושת החלקיקים שהשאלה הזכירה. אבל התגובה משאירה גם גרעין, והוא מסלול בפני עצמו, ופיזור קומפטון מעיף אלקטרון, שגם הוא מסלול.` },
+      { text: `חמישה.`, correct: true },
+    ],
+    onRun: () => ev.play(6.5),
+    steps: [
+      { hint: `מה קורה למסלול של הפרוטון בצעד של התגובה הלא-אלסטית?`,
+        work: `המסלול שלו נגמר. התהליך protonInelastic עוצר את הפרוטון ויוצר את התוצרים כחלקיקים חדשים, משניים (secondaries): נייטרון, גמא, והגרעין שנשאר אחרי התגובה.` },
+      { hint: `ומה קורה בפיזור קומפטון של הגמא?`,
+        work: `הגמא ממשיך באותו מסלול, עם אנרגיה וכיוון חדשים. האלקטרון שהוא מעיף הוא חלקיק חדש, ולכן מסלול חדש.` },
+      { hint: `נספור.`,
+        work: `פרוטון (1); מהתגובה נייטרון (2), גמא (3) וגרעין (4); מהקומפטון אלקטרון (5). התשובה: חמישה מסלולים, ו-21 צעדים באירוע הסכמטי הזה.` },
+    ],
+    explanation: `<p>אפשר להריץ שוב ולעקוב אחרי הסדר: Geant4 מעביר מסלול אחד בכל פעם, ולוקח תמיד את האחרון שנוצר. על הסדר הזה נדבר בפרק 2.</p>`,
+    sayRight: 'נכון. כל חלקיק שנוצר הוא מסלול, גם הגרעין וגם האלקטרון.',
+    sayWrong: 'גם אני שכחתי את הגרעין בפעם הראשונה. Geant4 לא שוכח.',
+  });
+
+  /* ---------- 5. Statistics ---------- */
+  const conv = PHY.sims.mcConverge($('c-stats'), $('ctl-stats'), { mode: 'card', locked: true, chapter: CH, section: 'stats' });
+  U.PredictCard($('pc-stats'), {
+    chapter: CH, id: 'stats', section: 'stats', tag: TAG,
+    question: `אחרי \\(10^{4}\\) פרוטונים השגיאה היחסית של ההערכה היא כ-10%. כמה פרוטונים צריך כדי לרדת ל-1%?`,
+    options: [
+      { text: `\\(10^{5}\\): פי 10 פרוטונים, שגיאה קטנה פי 10.`, why: `ככה זה היה אם השגיאה הייתה יורדת כמו \\(1/N\\). אבל הרעש מתקזז רק בחלקו: השגיאה יורדת כמו \\(1/\\sqrt N\\), ופי 10 פרוטונים מקטינים אותה רק פי 3.2.` },
+      { text: `\\(10^{6}\\): פי 100 פרוטונים.`, correct: true },
+      { text: `\\(10^{8}\\): כל ספרה של דיוק עולה פי \\(10^{4}\\).`, why: `זה היה נכון אם השגיאה הייתה יורדת כמו \\(N^{-1/4}\\). היא יורדת כמו \\(1/\\sqrt N\\), ולכן פי 10 בדיוק עולה פי 100 בפרוטונים.` },
+    ],
+    onRun: () => conv.play(4),
+    steps: [
+      { hint: `כמה נייטרונים צפויים אחרי \\(N\\) פרוטונים, ומה הפיזור של הספירה?`,
+        work: `צפויים \\(Np\\) נייטרונים, והפיזור של ספירה כזאת הוא \\(\\sqrt{Np}\\). בדיוק זה \\(\\sqrt{Np(1-p)}\\), וכאן \\(1-p\\) כמעט 1.` },
+      { hint: `מה השגיאה היחסית?`,
+        work: `\\(\\sqrt{Np}/(Np) = 1/\\sqrt{Np}\\). עם \\(N = 10^{4}\\) ו-\\(p = 0.01\\): \\(1/\\sqrt{100} = 0.1\\), כלומר 10%.` },
+      { hint: `כמה \\(N\\) צריך בשביל 1%?`,
+        work: `\\(1/\\sqrt{Np} = 0.01\\) נותן \\(Np = 10^{4}\\), כלומר \\(N = 10^{6}\\). בהנפשה הפס ב-\\(10^{6}\\) צר פי 10 מאשר ב-\\(10^{4}\\). התשובה: \\(10^{6}\\) פרוטונים, פי 100.` },
+    ],
+    explanation: `<p>אפשר להריץ שוב עם "אותו זרע" ובלעדיו. עם אותו זרע העקומה חוזרת בדיוק, כל קפיצה במקומה. בלעדיו הדרך אחרת, אבל המשפך אותו משפך.</p>`,
+    sayRight: 'נכון. פי 10 בדיוק עולה פי 100 בזמן ריצה.',
+    sayWrong: 'גם אני קיוויתי לפי 10. השורש לא מוותר.',
+  });
+
+  /* ---------- 6. Why Monte Carlo ---------- */
+  const darts = PHY.sims.mcDarts($('c-why'), $('ctl-why'), { N: 1000, locked: true, chapter: CH, section: 'why' });
+  U.PredictCard($('pc-why'), {
+    chapter: CH, id: 'why', section: 'why', tag: TAG,
+    question: `נזרוק 1000 חיצים אקראיים. כמה קרוב ל-π תגיע ההערכה?`,
+    options: [
+      { text: `3.14 בדיוק, שלוש ספרות נכונות. אלף חיצים זה המון.`, why: `אלף נשמע הרבה, אבל השגיאה היחסית היא בערך \\(1/\\sqrt N\\) כפול מקדם: כאן כ-1.7%, כלומר כ-0.05. בשביל שלוש ספרות נכונות צריך בערך פי 100 חיצים.` },
+      { text: `בטווח של כ-0.05 מ-π, בערך בין 3.09 ל-3.19.`, correct: true },
+      { text: `שום דבר שימושי: הגרלה נותנת מספר עם שגיאה של עשרות אחוזים.`, why: `שגיאה של עשרות אחוזים יש עם 10 חיצים. עם 1000 הממוצע כבר יציב, והשגיאה קטנה מ-2%.` },
+    ],
+    onRun: () => darts.play(3),
+    steps: [
+      { hint: `מה הסיכוי של חץ אחד לנחות בתוך רבע העיגול?`,
+        work: `השטח של רבע עיגול ברדיוס 1 חלקי השטח של הריבוע: \\(f = \\pi/4 = 0.785\\).` },
+      { hint: `מה הפיזור של החלק \\(\\hat f\\) שנמדד מ-1000 חיצים?`,
+        work: `כמו בסעיף הקודם: \\(\\sigma_f = \\sqrt{f(1-f)/N} = \\sqrt{0.785\\cdot 0.215/1000} = 0.013\\).` },
+      { hint: `ומה השגיאה על π?`,
+        work: `\\(\\sigma_\\pi = 4\\sigma_f = 0.052\\), שהם 1.7% מ-π. התשובה: בטווח של כ-0.05 מ-π, בערך בין 3.09 ל-3.19.` },
+    ],
+    explanation: `<p>הסליידר פתוח. כמה חיצים צריך כדי שהספרה השלישית, ה-4 של 3.14, תהיה נכונה ברוב הזריקות?</p>`,
+    sayRight: 'נכון. אלף חיצים נותנים שתי ספרות, לא שלוש.',
+    sayWrong: 'גם אני ציפיתי ליותר מאלף חיצים. השורש שוב.',
+  });
+
+  /* ---------- 8. Playground ---------- */
+  PHY.sims.mcSlab($('c-lab'), $('ctl-lab'), { mode: 'lab', material: 'Be', sigma: 1, N: 10000, d: 2, seed: 99, chapter: CH, section: 'playground' });
+
+  /* ---------- 9. Game ---------- */
+  PHY.sims.mcLambdaGame($('c-game'), $('ctl-game'), { chapter: CH, section: 'game' });
+
+  /* ---------- 10. Traps ---------- */
+  const trapDone = {};
+  const trapFinished = (name) => {
+    trapDone[name] = true;
+    if (trapDone.a && trapDone.b && trapDone.c && trapDone.d) PHY.progress.markSection(CH, 'traps');
+  };
+
+  const more = PHY.sims.mcConverge($('c-trap1'), $('ctl-trap1'), { mode: 'trap', locked: true, seed: 21 });
+  U.PredictCard($('pc-trap1'), {
+    chapter: CH, id: 'trap1', tag: 'מלכודת 1: יותר אירועים, יותר נייטרונים',
+    question: `ריצה של \\(10^{6}\\) פרוטונים נתנה \\(4.5\\times10^{-4} \\pm 0.2\\times10^{-4}\\) נייטרונים לפרוטון. מריצים \\(10^{8}\\) פרוטונים. מה נקבל?`,
+    options: [
+      { text: `תפוקה גבוהה יותר: יותר פרוטונים, יותר נייטרונים.`, why: `יותר נייטרונים בסך הכול, נכון: פי 100. אבל התפוקה היא נייטרונים לפרוטון, והמונה והמכנה גדלים יחד.` },
+      { text: `בערך אותה תפוקה, עם שגיאה קטנה פי 10.`, correct: true },
+      { text: `בדיוק אותו מספר ואותה שגיאה: הפיזיקה לא השתנתה.`, why: `הפיזיקה לא השתנתה, ולכן הערך לא זז מעבר לשגיאה. אבל השגיאה כן משתנה: היא יורדת כמו \\(1/\\sqrt N\\).` },
+    ],
+    onRun: () => more.play(4),
+    steps: [
+      { hint: `מה הממוצע מעריך, ומה קורה לו כשמוסיפים אירועים?`,
+        work: `הממוצע מעריך את התפוקה האמיתית, כאן \\(4.47\\times10^{-4}\\) לפרוטון. עוד אירועים מקרבים אותו אליה, ולא מזיזים אותה.` },
+      { hint: `פי כמה קטנה השגיאה כשמגדילים את \\(N\\) פי 100?`,
+        work: `\\(\\sqrt{100} = 10\\): מ-\\(0.2\\times10^{-4}\\) ל-\\(0.02\\times10^{-4}\\). בדיקה: \\(10^{8}\\cdot 4.47\\times10^{-4} = 4.47\\times10^{4}\\) נייטרונים, ו-\\(1/\\sqrt{44700} = 0.47\\%\\).` },
+      { hint: `ומה ראינו בהנפשה?`,
+        work: `העקומה נשארה סביב הקו של האמת, והפס הצטמצם. התשובה: בערך אותה תפוקה, עם שגיאה קטנה פי 10.` },
+    ],
+    onDone: () => trapFinished('a'),
+    sayRight: 'נכון. אותו ערך, שגיאה קטנה יותר.',
+    sayWrong: 'גם אני התבלבלתי פעם בין סך הכול לבין לפרוטון.',
+  });
+
+  const cmp = PHY.sims.mcCompare($('c-trap2'), $('ctl-trap2'), { locked: true });
+  U.PredictCard($('pc-trap2'), {
+    chapter: CH, id: 'trap2', tag: 'מלכודת 2: מספר בלי שגיאה',
+    question: `שני ממירים, \\(10^{6}\\) פרוטונים לכל אחד. A נתן 460 נייטרונים ו-B נתן 440, בלי שגיאות. איזה ממיר טוב יותר?`,
+    options: [
+      { text: `A, ב-4.5%. מספר גדול יותר הוא ממיר טוב יותר.`, why: `ההפרש באמת 20 נייטרונים. אבל לכל ספירה פיזור של כ-21, וההפרש בין שתיהן מתנדנד בכ-30. 20 נמצא עמוק בתוך הרעש.` },
+      { text: `אי אפשר לדעת: לכל מספר שגיאה של כ-21, וההפרש בתוך הרעש.`, correct: true },
+      { text: `B. ה-460 של A הוא כנראה קפיצה למעלה.`, why: `גם זה ניחוש על רעש. בלי שגיאה אין דרך לדעת מי קפץ, ואם בכלל.` },
+    ],
+    onRun: () => cmp.play(4),
+    steps: [
+      { hint: `מה השגיאה של ספירה של 460? ושל 440?`,
+        work: `\\(\\sqrt{460} = 21.4\\) ו-\\(\\sqrt{440} = 21.0\\).` },
+      { hint: `מה הפיזור של ההפרש בין שתי ספירות בלתי תלויות?`,
+        work: `השגיאות מתחברות בריבועים: \\(\\sqrt{460 + 440} = 30\\). ההפרש 20 קטן מסטיית תקן אחת שלו.` },
+      { hint: `מה ראינו כששני הממירים היו בדיוק אותו ממיר?`,
+        work: `A יצא גבוה מ-B בערך בחצי מהזוגות, והפרשים של 20 ויותר חזרו שוב ושוב. כדי שהבדל של 4.5% יהיה פי 3 מהשגיאה של ההפרש, צריך כ-\\(10^{4}\\) נייטרונים בכל ממיר. התשובה: אי אפשר לדעת.` },
+    ],
+    onDone: () => trapFinished('b'),
+    sayRight: 'נכון. בלי שגיאה, 460 ו-440 הם אותו מספר.',
+    sayWrong: 'גם אני בחרתי פעם ממיר לפי הפרש בתוך הרעש.',
+  });
+
+  const thr = PHY.sims.mcThreads($('c-trap3'), $('ctl-trap3'), { locked: true });
+  U.PredictCard($('pc-trap3'), {
+    chapter: CH, id: 'trap3', tag: 'מלכודת 3: יותר הליכים, מספרים אחרים',
+    question: `ריצה עם <code dir="ltr">-s 12345 -t 4</code> נתנה מספר מסוים של נייטרונים. אותו מאקרו, אותו זרע, אבל <code dir="ltr">-t 8</code>: שמונה הליכים (threads). מה יקרה?`,
+    options: [
+      { text: `מספר אחר: ההליכים מחלקים ביניהם את האירועים אחרת, וכל אחד מגריל בקצב שלו.`, why: `כך זה היה אם כל הליך היה מושך מספרים מרצף משלו. Geant4 נותן לכל אירוע זרעים משלו לפני שהוא נשלח להליך, ולכן האירוע לא יודע מי מריץ אותו.` },
+      { text: `בדיוק אותו מספר. רק סדר השורות בקובץ הפלט יכול להשתנות.`, correct: true },
+      { text: `אותו ערך עם חצי שגיאה: פי 2 הליכים, פי 2 סטטיסטיקה.`, why: `הליכים מקצרים את זמן הריצה, ולא מוסיפים אירועים. את מספר האירועים קובעת הפקודה <code dir="ltr">/run/beamOn</code>.` },
+    ],
+    onRun: () => thr.play(4),
+    steps: [
+      { hint: `מאיפה מקבל כל אירוע את המספרים האקראיים שלו?`,
+        work: `המנהל (master) מגריל מהזרע הראשי זוג זרעים לכל אירוע, לפי מספר האירוע. ההליך (worker) שמריץ את האירוע מאתחל איתם את המחולל שלו.` },
+      { hint: `אז מה משתנה כשיש 8 הליכים במקום 4?`,
+        work: `רק מי מריץ כל אירוע ומתי. כל אירוע נותן בדיוק אותה תוצאה, ולכן גם הסכום זהה. מה שכן משתנה הוא סדר הסיום, ואיתו סדר השורות בקובץ.` },
+      { hint: `ומה ראינו בהנפשה?`,
+        work: `ב-4 וב-8 הליכים יצא אותו מספר נייטרונים, והאירועים הראשונים שנגמרו היו אחרים. התשובה: בדיוק אותו מספר.` },
+    ],
+    onDone: () => trapFinished('c'),
+    sayRight: 'נכון. זרע לכל אירוע, ולכן אותם מספרים בכל מספר הליכים.',
+    sayWrong: 'גם אני חשדתי בהליכים. המנהל דואג לזרעים.',
+  });
+
+  const zero = PHY.sims.mcZero($('c-trap4'), $('ctl-trap4'), { locked: true });
+  U.PredictCard($('pc-trap4'), {
+    chapter: CH, id: 'trap4', tag: 'מלכודת 4: אפס ספירות',
+    question: `ריצה של \\(10^{6}\\) פרוטונים מתחת ל-10 MeV על ממיר של Pb נגמרה עם 0 נייטרונים. מה אפשר להגיד על התפוקה?`,
+    options: [
+      { text: `היא אפס. לא יצא אף נייטרון, אז אין תפוקה.`, why: `אפס ספירות אומר שהתפוקה קטנה, לא שהיא אפס. ממיר עם תפוקה של \\(10^{-6}\\) לפרוטון נותן 0 בכשליש מהריצות של \\(10^{6}\\) פרוטונים.` },
+      { text: `היא קטנה מכ-\\(3\\times10^{-6}\\) לפרוטון, בביטחון של 95%.`, correct: true },
+      { text: `אי אפשר להגיד כלום בלי לפחות ספירה אחת.`, why: `אפשר להגיד הרבה: תפוקה גבוהה הייתה נותנת ספירות כמעט בוודאות. האפס פוסל כל תפוקה שבה הסיכוי לאפס קטן מ-5%.` },
+    ],
+    onRun: () => zero.play(4),
+    steps: [
+      { hint: `אם התוחלת היא \\(\\mu\\) ספירות, מה הסיכוי לספור 0?`,
+        work: `לפי פואסון, \\(P(0) = e^{-\\mu}\\). עם \\(\\mu = 1\\) זה 37%: ממיר כזה נותן אפס כמעט בכל ריצה שלישית, כמו בהנפשה.` },
+      { hint: `באיזו תוחלת הסיכוי לאפס יורד ל-5%?`,
+        work: `\\(e^{-\\mu} = 0.05\\), כלומר \\(\\mu = \\ln 20 = 3.0\\). תוחלת גדולה מ-3 הייתה נותנת אפס בפחות מ-5% מהריצות, ולכן היא נפסלת.` },
+      { hint: `מה זה אומר על התפוקה לפרוטון?`,
+        work: `\\(p < 3.0/N = 3.0/10^{6}\\), בביטחון של 95%. התשובה: התפוקה קטנה מכ-\\(3\\times10^{-6}\\) לפרוטון, ולא בהכרח אפס.` },
+    ],
+    onDone: () => trapFinished('d'),
+    sayRight: 'נכון. אפס ספירות הוא גבול עליון, לא אפס.',
+    sayWrong: 'גם אני כתבתי פעם "אפס" בטבלה. היום אני כותב "פחות מ".',
+  });
+
+  /* ---------- 11. Problems ---------- */
+  const probs = $('problems-host');
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 1: כמה אטומים בבריליום',
+    text: `הצפיפות של Be היא \\(1.848\\ \\text{g/cm}^3\\), והמסה המולרית שלו \\(9.012\\ \\text{g/mol}\\). כמה אטומים יש בסנטימטר מעוקב?`,
+    fields: [
+      { label: '\\(n\\)', answer: 1.235, unit: '×10²³ cm⁻³' },
+    ],
+    steps: [
+      { hint: `כמה מול של Be יש בסנטימטר מעוקב?`,
+        work: `\\(\\rho/A = 1.848\\ \\text{g/cm}^3 / 9.012\\ \\text{g/mol} = 0.2051\\ \\text{mol/cm}^3\\).` },
+      { hint: `וכמה אטומים זה?`,
+        work: `כפול מספר אבוגדרו: \\(0.2051\\cdot 6.022\\times10^{23} = 1.235\\times10^{23}\\ \\text{cm}^{-3}\\).` },
+      { hint: `בדיקת יחידות: מה יוצא מ-g/cm³ חלקי g/mol, כפול אטומים למול?`,
+        work: `\\(\\text{g/cm}^3\\cdot\\text{mol/g}\\cdot\\text{mol}^{-1} = \\text{cm}^{-3}\\): מספר בסנטימטר מעוקב, כמו שצריך. התשובה: \\(1.235\\times10^{23}\\) אטומים ב-\\(\\text{cm}^3\\).` },
+    ],
+  });
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 2: מרחק חופשי בממיר',
+    text: `לחלקיק בבריליום יש חתך פעולה של 0.5 b. מה המרחק החופשי הממוצע שלו? (את הצפיפות של Be חישבנו בשאלה 1.)`,
+    fields: [
+      { label: '\\(\\lambda\\)', answer: 16.2, unit: 'cm' },
+    ],
+    steps: [
+      { hint: `כמה זה 0.5 b בסנטימטרים רבועים?`,
+        work: `\\(1\\ \\text{b} = 10^{-24}\\ \\text{cm}^2\\), ולכן \\(\\sigma = 5\\times10^{-25}\\ \\text{cm}^2\\).` },
+      { hint: `מה \\(n\\sigma\\), ומה היחידות שלו?`,
+        work: `\\(n\\sigma = 1.235\\times10^{23}\\ \\text{cm}^{-3}\\cdot 5\\times10^{-25}\\ \\text{cm}^2 = 0.06175\\ \\text{cm}^{-1}\\): הסיכוי לאינטראקציה בכל סנטימטר.` },
+      { hint: `ומה \\(\\lambda\\)?`,
+        work: `\\(\\lambda = 1/(n\\sigma) = 1/0.06175 = 16.2\\ \\text{cm}\\), כלומר 162 mm, פי 81 מעובי הממיר. התשובה: 16.2 cm.` },
+    ],
+  });
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 3: כמה אירועים להזמין',
+    text: `התפוקה של ממיר ה-Be היא \\(4.47\\times10^{-4}\\) נייטרונים לפרוטון. כמה פרוטונים צריך לירות כדי שהשגיאה היחסית הסטטיסטית תהיה 1%? (נניח ספירה בלי משקלים.)`,
+    fields: [
+      { label: '\\(N\\)', answer: 2.24, unit: '×10⁷' },
+    ],
+    steps: [
+      { hint: `מה השגיאה היחסית של ספירה שהתוחלת שלה \\(Np\\)?`,
+        work: `\\(\\sqrt{Np}/(Np) = 1/\\sqrt{Np}\\).` },
+      { hint: `כמה ספירות צריך בשביל 1%?`,
+        work: `\\(1/\\sqrt{Np} = 0.01\\), כלומר \\(Np = 10^{4}\\) נייטרונים.` },
+      { hint: `וכמה פרוטונים זה?`,
+        work: `\\(N = 10^{4}/4.47\\times10^{-4} = 2.24\\times10^{7}\\) פרוטונים, פי 7.5 מריצת ה-Be. התשובה: \\(2.24\\times10^{7}\\). בריצה עם משקלים המספר אחר, כי שם השגיאה באה מהפיזור בין האירועים.` },
+    ],
+  });
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 4: גבול עליון',
+    text: `ריצה של \\(10^{6}\\) אירועים נגמרה עם 0 נייטרונים. מה הגבול העליון על התפוקה לאירוע, בביטחון של 95%?`,
+    fields: [
+      { label: '\\(p\\) קטן מ-', answer: 3, unit: '×10⁻⁶' },
+    ],
+    steps: [
+      { hint: `מה הסיכוי לספור 0 כשהתוחלת היא \\(\\mu\\)?`,
+        work: `\\(P(0) = e^{-\\mu}\\), לפי התפלגות פואסון.` },
+      { hint: `איזו תוחלת נותנת סיכוי של 5% לאפס?`,
+        work: `\\(e^{-\\mu} = 0.05\\), כלומר \\(\\mu = \\ln 20 = 2.996\\).` },
+      { hint: `איך עוברים מתוחלת לתפוקה לאירוע?`,
+        work: `\\(\\mu = Np\\), ולכן \\(p < 2.996/10^{6} = 3\\times10^{-6}\\). התשובה: \\(3\\times10^{-6}\\) לאירוע, בביטחון של 95%.` },
+    ],
+  });
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 5: כמה פוגעים בשכבה דקה',
+    text: `חלקיקים עם מרחק חופשי ממוצע של 16.2 cm עוברים דרך ממיר Be בעובי 2 mm. איזה חלק מהם עובר אינטראקציה בממיר?`,
+    fields: [
+      { label: 'החלק', answer: 1.23, unit: '%' },
+    ],
+    steps: [
+      { hint: `מה הסיכוי לעבור עובי \\(x\\) בלי אינטראקציה?`,
+        work: `\\(e^{-x/\\lambda}\\).` },
+      { hint: `מה \\(x/\\lambda\\) כאן? כדאי לעבור ליחידה אחת.`,
+        work: `\\(x = 2\\ \\text{mm} = 0.2\\ \\text{cm}\\), ו-\\(x/\\lambda = 0.2/16.2 = 0.01235\\).` },
+      { hint: `ומה החלק שכן עובר אינטראקציה?`,
+        work: `\\(1 - e^{-0.01235} = 0.01227\\), כלומר 1.23%. בשכבה דקה, \\(x \\ll \\lambda\\), זה פשוט \\(x/\\lambda\\). התשובה: 1.23%.` },
+    ],
+  });
+
+  /* ---------- 12. Quiz ---------- */
+  U.Quiz($('quiz-host'), {
+    chapter: CH, section: 'quiz',
+    questions: [
+      {
+        type: 'num',
+        q: `ל-Pb צפיפות של \\(11.35\\ \\text{g/cm}^3\\) ומסה מולרית של \\(207.2\\ \\text{g/mol}\\). מה המרחק החופשי הממוצע לחתך פעולה של 2 b, במילימטרים?`,
+        answer: 151.6, unit: 'mm',
+        steps: [
+          { hint: `מה צפיפות האטומים של Pb?`,
+            work: `\\(n = 11.35\\cdot 6.022\\times10^{23}/207.2 = 3.30\\times10^{22}\\ \\text{cm}^{-3}\\).` },
+          { hint: `ומה \\(\\lambda\\)?`,
+            work: `\\(\\lambda = 1/(3.30\\times10^{22}\\cdot 2\\times10^{-24}) = 1/0.0660 = 15.16\\ \\text{cm}\\). התשובה: 151.6 mm.` },
+        ],
+      },
+      {
+        type: 'mc',
+        q: `מה העומק הממוצע של האינטראקציה הראשונה בבלוק עבה?`,
+        options: [`\\(\\lambda/2\\)`, `\\(\\lambda\\ln 2 \\approx 0.69\\,\\lambda\\)`, `\\(\\lambda\\)`, `\\(2\\lambda\\)`],
+        answer: 2,
+        steps: [
+          { hint: `לפי איזו התפלגות מתפלג העומק?`,
+            work: `\\(P(x) = e^{-x/\\lambda}/\\lambda\\).` },
+          { hint: `מה הממוצע שלה, ומה החציון?`,
+            work: `\\(\\langle x\\rangle = \\int_0^\\infty x\\,e^{-x/\\lambda}\\,dx/\\lambda = \\lambda\\). החציון, העומק שלפניו פוגעים חצי מהחלקיקים, הוא \\(\\lambda\\ln 2\\). התשובה: \\(\\lambda\\).` },
+        ],
+      },
+      {
+        type: 'mc',
+        q: `צעד נגמר על הגבול בין שני נפחים. מה קרה בנקודת הסיום שלו?`,
+        options: [`פיזור אלסטי: כל צעד נגמר באינטראקציה`, `שום אינטראקציה: Transportation עצר את הצעד, והחלקיק נכנס לנפח הבא`, `Geant4 הוריד מהחלקיק אנרגיה קבועה במעבר`, `המסלול נגמר, ומסלול חדש מתחיל בנפח הבא`],
+        answer: 1,
+        steps: [
+          { hint: `מי הציע את האורך של צעד שנגמר על גבול?`,
+            work: `הגיאומטריה, דרך התהליך Transportation: המרחק עד הגבול היה הקצר מכל ההצעות.` },
+          { hint: `מה קורה למסלול ולתהליכים האחרים?`,
+            work: `המסלול ממשיך, עם אותו מספר, בנפח החדש, וכל תהליך שומר את מה שנשאר לו. התשובה: שום אינטראקציה, רק מעבר לנפח הבא.` },
+        ],
+      },
+      {
+        type: 'num',
+        q: `ספרנו 2500 נייטרונים. מה השגיאה היחסית הסטטיסטית, באחוזים?`,
+        answer: 2, unit: '%',
+        steps: [
+          { hint: `מה הפיזור של ספירה של 2500?`,
+            work: `\\(\\sqrt{2500} = 50\\).` },
+          { hint: `ומה זה ביחס לספירה עצמה?`,
+            work: `\\(50/2500 = 0.02\\). התשובה: 2%.` },
+        ],
+      },
+      {
+        type: 'num',
+        q: `פי כמה צריך להגדיל את מספר האירועים כדי להקטין את השגיאה הסטטיסטית פי 3?`,
+        answer: 9, unit: '',
+        steps: [
+          { hint: `איך השגיאה תלויה במספר האירועים \\(N\\)?`,
+            work: `\\(\\delta \\propto 1/\\sqrt N\\).` },
+          { hint: `פי כמה צריך להגדיל את \\(N\\) כדי ש-\\(\\sqrt N\\) יגדל פי 3?`,
+            work: `\\(3^2 = 9\\). התשובה: פי 9 אירועים.` },
+        ],
+      },
+    ],
+  });
+
+  U.initChapter({ id: CH });
+})();
+</script>
+</body>
+</html>

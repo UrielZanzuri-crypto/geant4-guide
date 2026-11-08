@@ -1,0 +1,736 @@
+<!doctype html>
+<html lang="he" dir="rtl" data-course="geant4">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>פרק 4: פיזיקה | Geant4 צעד אחר צעד</title>
+<meta name="description" content="רשימות פיזיקה, מודלים ונתונים גרעיניים ב-Geant4: איך קוראים את השם QGSP_BIC_AllHP_EMZ, מאיפה בא חתך הפעולה, למה לממיר עבה יש תפוקה שלא תלויה בצפיפות, ואיך הפרויקט ldns מצא ותיקן באג ריבוי ב-ParticleHP.">
+<script>try{var t=localStorage.getItem('phy-theme');document.documentElement.setAttribute('data-theme',t||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'))}catch(e){document.documentElement.setAttribute('data-theme','light')}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&family=Rubik:wght@500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css">
+<link rel="stylesheet" href="../css/style.css">
+<style>
+  /* Chapter 4 only */
+  .quest-list { margin: 10px 0 0; padding-inline-start: 22px; }
+  .quest-list li { margin-bottom: 6px; }
+  .photo { margin: 16px 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-m); padding: 8px; }
+  .photo img { display: block; width: 100%; height: auto; border-radius: var(--radius-s); }
+  .photo figcaption { font-size: 0.9rem; color: var(--ink-soft); margin-top: 6px; line-height: 1.5; }
+  #ctl-proc .readout { flex-basis: 100%; }
+  #ctl-proc .r-value { font-size: 0.98rem; }
+</style>
+</head>
+<body>
+
+<header class="topbar" data-topbar></header>
+
+<main>
+
+<!-- 1. HOOK -->
+<section class="section wrap" data-section="hook" id="hook">
+  <span class="kicker">פרק 4: פיזיקה</span>
+  <h1 class="hero-title">אותו ממיר, שתי רשימות</h1>
+  <p class="lead">עד עכשיו Geant4 ידע מה קורה לפרוטון בממיר. מאיפה הוא יודע? מרשימת הפיזיקה (physics list): אוסף של תהליכים, ולכל תהליך מודלים ונתונים. בפרק הזה נפתח את הרשימה של ldns, ונראה למה בחירה לא מתאימה נותנת אפס נייטרונים.</p>
+  <p>בטבלת הבנצ'מרק של הפרויקט יש ניסוי פשוט: ממיר LiF עבה, ופרוטונים של 5 MeV, \(2\times10^{4}\) בכל נקודה. עם הרשימה <code dir="ltr">QGSP_BIC_HP</code> לא יצא אף נייטרון. עם <code dir="ltr">QGSP_BIC_AllHP</code> יצאו \(5.0\times10^{-4}\) נייטרונים לפרוטון. שתיהן רשימות רשמיות של Geant4.</p>
+  <div id="pc-hook">
+    <figure class="sim"><canvas id="c-hook"></canvas><div class="sim-controls" id="ctl-hook"></div></figure>
+  </div>
+  <p class="block-gap">זה הלקח של הפרק: רשימת פיזיקה היא אוסף של בחירות. Geant4 לא מזהיר כשמודל עובד מחוץ לתחום שבו הוא טוב, הוא פשוט מחזיר מספר. לכן ldns משתמש כברירת מחדל ב-<code dir="ltr">QGSP_BIC_AllHP_EMZ</code>, ובודק אותה מול הנתונים.</p>
+  <p>בסעיפים הבאים נפרק את השם, נראה מה יש בקובץ של נתונים גרעיניים, נבין למה ממיר עבה לא תלוי בצפיפות, ונגיע לבאג אמיתי שהפרויקט מצא בתוך Geant4.</p>
+</section>
+
+<!-- 2. CYCLE: process = data + model -->
+<section class="section wrap" data-section="process" id="process">
+  <div class="section-head"><span class="section-num">2</span><h2>תהליך: כמה פעמים, ומה יוצא</h2></div>
+  <p>לפרוטון בממיר יש כמה תהליכים (processes). יינון (<code dir="ltr">hIoni</code>) הוא תהליך רציף: הוא מוריד אנרגיה בכל צעד. פיזור מרובה (<code dir="ltr">msc</code>) מטה את הכיוון קצת בכל צעד. פיזור אלסטי על גרעין (<code dir="ltr">hadElastic</code>) ותגובה לא-אלסטית (<code dir="ltr">protonInelastic</code>) הם תהליכים בדידים, והתגובה הלא-אלסטית היא זו שיוצרת נייטרונים.</p>
+  <p>לכל תהליך גרעיני יש שני חלקים. אוסף של חתכי פעולה (cross-section data set) קובע כמה פעמים התהליך קורה, כלומר את \(\lambda\) של פרק 1. מודל (model) קובע מה יוצא כשהוא קורה: אילו חלקיקים, באילו אנרגיות ולאילו כיוונים. בתחילת כל ריצה Geant4 מדפיס את שניהם, ואלה השורות של הפרוטון מהלוג של ריצת ה-Be, <code dir="ltr">E30J_M2p5_Be2.log</code>:</p>
+  <pre class="code" dir="ltr" data-no-iso>                           Hadronic Processes for proton
+  Process: hadElastic
+        Model:             hElasticCHIPS: 0 eV  ---&gt; 100 TeV
+     Cr_sctns:  BarashenkovGlauberGribov: 0 eV  ---&gt; 100 TeV
+  Process: protonInelastic
+        Model:                      QGSP: 12 GeV ---&gt; 100 TeV
+        Model:                      FTFP: 3 GeV ---&gt; 25 GeV
+        Model:            BertiniCascade: 1 GeV ---&gt; 6 GeV
+        Model:            Binary Cascade: 190 MeV ---&gt; 1.5 GeV
+        Model:         ProtonHPInelastic: 0 eV  ---&gt; 200 MeV
+     Cr_sctns:       ProtonHPInelasticXS: 0 eV  ---&gt; 20 MeV
+     Cr_sctns:          protonParticleXS: 0 eV  ---&gt; 100 TeV</pre>
+  <p>השורות <code dir="ltr">Model</code> הן המודלים, כל אחד עם תחום האנרגיה שלו. השורות <code dir="ltr">Cr_sctns</code> הן אוספי חתכי הפעולה. בגרף כל שורה היא פס על ציר אנרגיה לוגריתמי, ומעליהן גם המודלים של היינון ושל הפיזור המרובה מאותו לוג.</p>
+  <div id="pc-proc">
+    <figure class="sim"><canvas id="c-proc"></canvas><div class="sim-controls" id="ctl-proc"></div></figure>
+  </div>
+  <p class="block-gap">"מה יוצא" ו"כמה פעמים" באים ממקורות שונים, עם תחומים שונים. מתחת ל-20 MeV חתך הפעולה בא מהנתונים של HP, ולכן הוא שווה לקובץ המוערך. מעל 20 MeV הוא בא מ-G4PARTICLEXS, גם ברשימה שנקראת AllHP, אף שהתוצרים עדיין באים מהמודל של HP עד 200 MeV. נחזור לזה במלכודת 4.</p>
+  <p>בתחום שבו שני מודלים חופפים, למשל בין 190 ל-200 MeV, Geant4 מגריל ביניהם בכל תגובה, וההסתברות עוברת בהדרגה מאחד לשני. כך אין קפיצה בתוצאות במעבר בין מודלים.</p>
+  <div data-callout="intuition">
+    <p>חתך הפעולה הוא כמה פעמים הטלפון מצלצל, והמודל הוא מה נאמר בשיחה. אפשר לקבל את לוח השיחות ממקור אחד ואת התמלילים ממקור אחר, וכדאי לדעת מאיפה כל אחד בא.</p>
+  </div>
+</section>
+
+<!-- 3. CYCLE: reading the name of a list -->
+<section class="section wrap" data-section="lists" id="lists">
+  <div class="section-head"><span class="section-num">3</span><h2>לקרוא שם של רשימה</h2></div>
+  <p>את הרשימה Geant4 בונה לפי שם, מתוך המפעל <code dir="ltr">G4PhysListFactory</code>. אלה השורות ב-<code dir="ltr">ldns.cc</code> שבונות אותה ומוסיפות לה פיזור של נייטרונים תרמיים:</p>
+  <pre class="code" dir="ltr" data-no-iso>  G4PhysListFactory factory;
+  if (!factory.IsReferencePhysList(physName)) {
+    G4cerr &lt;&lt; "Unknown physics list: " &lt;&lt; physName &lt;&lt; G4endl;
+    return 1;
+  }
+  G4VModularPhysicsList* phys = factory.GetReferencePhysList(physName);
+  // thermal neutron scattering, S(alpha,beta), below 4 eV for materials whose
+  // elements carry thermal-scattering data (HDPE: TS_H_of_Polyethylene).
+  // Other materials are unaffected (free-gas model as before).
+  phys-&gt;RegisterPhysics(new G4ThermalNeutrons());</pre>
+  <p>השם בנוי מבלוקים. QGSP הוא מודל המיתרים לאנרגיות הגבוהות ביותר (Quark-Gluon String, עם Precompound). BIC היא הקסקדה הבינארית (Binary Cascade) לאנרגיות הביניים. HP מוסיף נתונים מוערכים לנייטרונים מתחת ל-20 MeV, ו-AllHP מוסיף אותם גם לפרוטון, לדאוטרון, לטריטון, ל-³He ולחלקיק α. EMZ בוחר את האפשרות 4 של הפיזיקה האלקטרומגנטית, עם עוצמות העצירה המדויקות ביותר באנרגיה נמוכה.</p>
+  <div id="pc-lists">
+    <figure class="sim"><canvas id="c-lists"></canvas><div class="sim-controls" id="ctl-lists"></div></figure>
+  </div>
+  <p class="block-gap">השם לא מונה את כל המודלים: ברשימה יש גם FTFP וגם Bertini, בתחומי הביניים שבין BIC ל-QGSP, אף שהם לא מופיעים בשם. והסדר בשם הוא לא סדר חשיבות: לפרוטונים של ldns, כולם מתחת ל-13 MeV, רק AllHP ו-EMZ משנים משהו.</p>
+  <p>כך זה נראה בראש הלוג. השורה השנייה מראה שהרשימה היא <code dir="ltr">QGSP_BIC_AllHP</code>, ש-EMZ הוחלף בה בחלק האלקטרומגנטי:</p>
+  <pre class="code" dir="ltr" data-no-iso>G4PhysListFactory::GetReferencePhysList &lt;QGSP_BIC_AllHP_EMZ&gt;
+&lt;&lt;&lt; Geant4 Physics List simulation engine: QGSP_BIC_AllHP</pre>
+</section>
+
+<!-- 4. CYCLE: evaluated data and thresholds -->
+<section class="section wrap" data-section="data" id="data">
+  <div class="section-head"><span class="section-num">4</span><h2>נתונים גרעיניים מוערכים, וסף</h2></div>
+  <p>AllHP אומר: לפרוטון מתחת ל-20 MeV, קודם נתונים ורק אחר כך מודל. הנתונים הם ספריות מוערכות (evaluated): קבצים שמשלבים מדידות ותיאוריה לטבלה אחת לכל גרעין. שתי שורות בתחילת הלוג מראות אילו ספריות נטענו:</p>
+  <pre class="code" dir="ltr" data-no-iso>@@@ G4ParticleHPInelasticData instantiated for particle neutron data directory variable is G4NEUTRONHPDATA pointing to /Users/urielzanzuri/geant4/data/G4NDL4.7.1
+@@@ G4ParticleHPInelasticData instantiated for particle proton data directory variable is G4PROTONHPDATA pointing to /Users/urielzanzuri/geant4/data/G4TENDL1.4/Proton</pre>
+  <p>לפרוטונים: G4TENDL1.4, שהיא TENDL-2019, עם ⁷Li, ⁹Be ו-²⁰⁸Pb מ-ENDF/B-VIII.0. לנייטרונים: G4NDL4.7.1. בכל קובץ, לכל ערוץ תגובה כמו (p,n), יש את חתך הפעולה כפונקציה של האנרגיה, \(\sigma(E)\), את ההתפלגויות של האנרגיה והכיוון של התוצרים, ואת מספר התוצרים הממוצע לתגובה, \(\nu(E)\).</p>
+  <p>דבר אחד הקובץ לא צריך לנחש: מתחת לסף התגובה סגורה. לתגובה (p,n) יש ערך Q שלילי, כי צריך להשקיע אנרגיה כדי ליצור את הגרעין החדש. ב-⁷Li(p,n)⁷Be הערך הוא \(Q = -1.644\) MeV.</p>
+  <div id="pc-data">
+    <figure class="sim"><canvas id="c-data"></canvas><div class="sim-controls" id="ctl-data"></div></figure>
+  </div>
+  <p class="block-gap">הסף הוא \(E_{th} = -Q\,(m_p+m_t)/m_t\), כאשר \(m_t\) המסה של גרעין המטרה. ל-⁹Be(p,n) עם \(Q = -1.850\) MeV יוצא 2.06 MeV (תרגיל 2), ול-¹⁹F(p,n) יוצא 4.2 MeV. ב-Pb הגרעין טעון מאוד, והפרוטון צריך אנרגיה כדי להתקרב אליו נגד הדחייה החשמלית (מחסום קולון), ולכן התגובה נפתחת בפועל רק מעל כ-10 MeV.</p>
+  <p>הצורות של \(\sigma(E)\) בגרף סכמטיות: רק הספים אמיתיים. את העקומות האמיתיות אפשר לראות בתוכנות כמו JANIS, ו-ldns יכול לכתוב לקובץ את חתכי הפעולה ש-Geant4 עצמו משתמש בהם, עם הפקודה <code dir="ltr">/ldns/xs/dump</code>.</p>
+</section>
+
+<!-- 5. CYCLE: thick-target yield -->
+<section class="section wrap" data-section="yield" id="yield">
+  <div class="section-head"><span class="section-num">5</span><h2>ממיר עבה: חתך פעולה חלקי עוצמת עצירה</h2></div>
+  <p>בממיר עבה הפרוטון לא עובר: הוא נעצר. בכל צעד באורך \(dx\) הסיכוי לתגובה הוא \(n\sigma(E)\,dx\), ובאותו צעד הוא מאבד \(dE = S(E)\,dx\), כאשר \(S = -dE/dx\) היא עוצמת העצירה (stopping power). התפוקה של פרוטון שנכנס באנרגיה \(E_0\) היא הסכום על כל האנרגיות שהוא עובר בדרך למטה.</p>
+  <p>מה קורה כשמשנים את הצפיפות? בהנפשה שני ממירי Be: אחד בצפיפות האמיתית, 1.848 g/cm³, ואחד דמיוני בחצי ממנה. שניהם עבים מספיק כדי לעצור פרוטונים של 13 MeV. כדי שיהיה מה לראות, חתך הפעולה בהנפשה מוגדל פי 150, ולכן המספרים הם של צעצוע.</p>
+  <div id="pc-yield">
+    <figure class="sim"><canvas id="c-yield"></canvas><div class="sim-controls" id="ctl-yield"></div></figure>
+  </div>
+  <p class="block-gap">זו התפוקה של מטרה עבה (thick-target yield): \(Y(E_0) = (N_A/A)\int_{E_{th}}^{E_0}\sigma(E)/S_m(E)\,dE\), כאשר \(S_m = S/\rho\) היא עוצמת העצירה המסית (mass stopping power). חתך הפעולה עובד רק דרך היחס \(\sigma/S_m\): פרוטון שמאט לאט מקבל יותר הזדמנויות. בגלל זה EMZ, עם עוצמות העצירה המדויקות באנרגיה נמוכה, היא חלק מהרשימה של ldns.</p>
+  <p>שני גרפים אמיתיים מריצת ה-Be מראים את אותו הדבר מצד אחר. בראשון, הנייטרונים נולדים כולם במילימטר הראשון של הממיר: הטווח של פרוטון של 13 MeV ב-Be הוא בערך 1.3 mm, ומעבר לו כבר אין פרוטונים. לכן עובי נוסף לא מוסיף נייטרונים.</p>
+  <figure class="photo">
+    <img src="../assets/ldns/3_birth_depth.png" loading="lazy" alt="היסטוגרמה של נייטרונים שנוצרו לכל מילימטר ולכל פרוטון, לפי העומק בממיר Be בעובי 2 מילימטר: גבוהה בכניסה ויורדת לאפס אחרי כמילימטר אחד.">
+    <figcaption>ריצת ה-Be: נייטרונים שנוצרו לכל מילימטר ולכל פרוטון, לפי העומק בממיר. הממיר נמשך מ-z = 45 mm עד 47 mm, והלידות נגמרות אחרי כמילימטר אחד.</figcaption>
+  </figure>
+  <p>בשני, האנרגיה של הפרוטון ברגע התגובה. הנייטרונים באים בעיקר מפרוטונים בין 3 ל-9 MeV: 42% מהם מפרוטונים בין 3 ל-6 MeV ו-39% מפרוטונים בין 6 ל-9 MeV, והחציון הוא 6.3 MeV. מתחת ל-2.06 MeV, הסף של ⁹Be, אין כלום.</p>
+  <figure class="photo">
+    <img src="../assets/ldns/4_proton_energy_at_reaction.png" loading="lazy" alt="היסטוגרמה בסקלה לוגריתמית של אנרגיית הפרוטון ברגע התגובה שיצרה נייטרון בממיר Be: מתחילה מעט מעל 2 MeV, שטוחה בין 4 ל-7 MeV ויורדת עד 13 MeV.">
+    <figcaption>ריצת ה-Be: נייטרונים שנוצרו לכל MeV ולכל פרוטון מקור, לפי האנרגיה של הפרוטון ברגע התגובה.</figcaption>
+  </figure>
+</section>
+
+<!-- 6. CYCLE: validation and the multiplicity bug -->
+<section class="section wrap" data-section="validate" id="validate">
+  <div class="section-head"><span class="section-num">6</span><h2>לבדוק את Geant4 מול הנתונים</h2></div>
+  <p>AllHP לוקח את הנתונים מהקובץ, אבל זה עוד לא אומר שהתוצאה נכונה. כשהפרויקט השווה את מה ש-Geant4 מייצר למה שכתוב בקבצים, התגלתה בעיה בתוך Geant4. היא נוגעת ל-\(\nu\), מספר הנייטרונים הממוצע לתגובה.</p>
+  <p>בחלק מהערוצים הקובץ נותן \(\nu\) לא שלם. ל-¹⁹F ב-5 MeV, למשל, \(\nu = 0.07\): בממוצע נייטרון אחד לכל כ-14 תגובות. מאז Geant4 11.2, ‏ParticleHP מעגל את \(\nu\) למספר השלם הקרוב, בכל תגובה מחדש.</p>
+  <div id="pc-mult">
+    <figure class="sim"><canvas id="c-mult"></canvas><div class="sim-controls" id="ctl-mult"></div></figure>
+  </div>
+  <p class="block-gap">הבאג הוא בקוד ולא בנתונים: עד Geant4 11.1 ההגרלה שמרה על הממוצע. ב-⁹Be ההשפעה הפוכה: ערכים כמו 0.8 מתעגלים ל-1, ו-Be יצא גבוה בכ-25%. ב-⁷Li(p,n)⁷Be יש בדיוק נייטרון אחד לתגובה, ושם לא השתנה כלום.</p>
+  <p>התיקון של ldns, הדגל <code dir="ltr">-n fix</code> שהוא ברירת המחדל, עובר בתחילת הריצה הראשונה על כל התוצרים של ParticleHP, ומעביר להגרלה מפואסון רק את אלה שה-\(\nu\) שלהם לא שלם. תוצרים עם \(\nu\) שלם נשארים מדויקים. כך זה נראה בלוג של ריצת ה-Be:</p>
+  <pre class="code" dir="ltr" data-no-iso>ParticleHP multiplicity mode: fix (Poisson for fractional yields only; see include/ParticleHPFix.hh)
+ParticleHP multiplicity fix (proton inelastic): 6 products with fractional yields -&gt; Poisson, 9 integer-yield products unchanged</pre>
+  <p>עם התיקון, היחס בין Geant4 לקובץ המוערך יצא 1.00 מתחת ל-20 MeV עבור ⁷Li, ⁹Be ו-¹⁹F. מה לא אומת: מעל 20 MeV, שם חתך הפעולה בא מ-G4PARTICLEXS ונמוך ב-12% עד 27% ל-F ול-Be, ו-²⁰⁸Pb בין 10 ל-16 MeV, שנותן שם פחות נייטרונים מהנתונים מסיבה שעוד לא הובנה.</p>
+  <p>ועוד בחירה אחת ברשימה שכדאי להכיר: חיתוך הייצור (production cut). Geant4 לא יוצר גמא, אלקטרונים ופוזיטרונים משניים שהטווח שלהם קצר מחיתוך הטווח (range cut), כברירת מחדל 0.7 mm, ומוסיף את האנרגיה שלהם לאיבוד הרציף. לכל חומר החיתוך הופך לסף אנרגיה, וטבלה בתחילת הריצה מדפיסה אותו:</p>
+  <pre class="code" dir="ltr" data-no-iso> Material : G4_Be
+ Range cuts        :  gamma  700 um     e-  700 um     e+  700 um  proton 0 fm
+ Energy thresholds :  gamma  1.81953 keV    e-  366.611 keV    e+  356.583 keV proton 0 eV </pre>
+  <p>ב-Be אלקטרון משני נוצר רק מעל 366.6 keV. לנייטרונים אין חיתוך כזה בכלל: כל נייטרון נוצר ומועבר עד הסוף. נשתמש בזה במלכודת 1.</p>
+</section>
+
+<!-- 7. EARNED FORMULAS -->
+<section class="section wrap" data-section="formula" data-passive id="formula">
+  <div class="section-head"><span class="section-num">7</span><h2>הנוסחאות שהרווחנו</h2></div>
+  <p>כל מה שכאן כבר רץ על המסך. עכשיו רק נותנים לזה שמות, שורה לכל סמל.</p>
+
+  <div class="formula-card">
+    <h3>תפוקה של ממיר עבה</h3>
+    <div class="formula-main">\[Y(E_0) = \frac{N_A}{A}\int_{E_{th}}^{E_0}\frac{\sigma(E)}{S_m(E)}\,dE\] \[\sigma_{xn} = \sigma_{\text{nonel}}\cdot\nu\]</div>
+    <table class="symbol-table">
+      <thead><tr><th>סמל</th><th>משמעות</th><th>יחידה</th></tr></thead>
+      <tbody>
+        <tr><td class="sym">\(Y\)</td><td>נייטרונים לפרוטון שנעצר בממיר.</td><td class="unit"></td></tr>
+        <tr><td class="sym">\(E_0\)</td><td>אנרגיית הפרוטון בכניסה לממיר.</td><td class="unit">MeV</td></tr>
+        <tr><td class="sym">\(S_m\)</td><td>עוצמת העצירה המסית, \(S/\rho\): כמה אנרגיה הפרוטון מאבד לכל גרם בסנטימטר רבוע.</td><td class="unit">MeV cm²/g</td></tr>
+        <tr><td class="sym">\(N_A/A\)</td><td>גרעינים בגרם של החומר. הצפיפות לא מופיעה: היא מצטמצמת.</td><td class="unit">g⁻¹</td></tr>
+        <tr><td class="sym">\(\sigma_{\text{nonel}}\)</td><td>חתך הפעולה הלא-אלסטי: כמה פעמים יש תגובה.</td><td class="unit">b</td></tr>
+        <tr><td class="sym">\(\nu\)</td><td>נייטרונים לתגובה, בממוצע. לא חייב להיות שלם.</td><td class="unit"></td></tr>
+        <tr><td class="sym">\(\sigma_{xn}\)</td><td>חתך הפעולה לייצור נייטרונים.</td><td class="unit">b</td></tr>
+      </tbody>
+    </table>
+    <p class="not-say"><b>מה הנוסחה לא אומרת:</b> שחתך הפעולה ידוע. היא טובה בדיוק כמו הנתונים ש-Geant4 לוקח, ורק בתחום שבו הם תקפים: מתחת ל-20 MeV, ואחרי שבדקנו את \(\nu\). היא גם מניחה שהקרן לא נחלשת בגלל התגובות עצמן, כלומר \(\int n\sigma\,dx \ll 1\).</p>
+  </div>
+
+  <div class="formula-card">
+    <h3>סף ומרחק חופשי</h3>
+    <div class="formula-main">\[E_{th} = -Q\,\frac{m_p + m_t}{m_t}\] \[\lambda = \frac{1}{n\sigma}\]</div>
+    <table class="symbol-table">
+      <thead><tr><th>סמל</th><th>משמעות</th><th>יחידה</th></tr></thead>
+      <tbody>
+        <tr><td class="sym">\(Q\)</td><td>האנרגיה שהתגובה משחררת. שלילי: התגובה צורכת אנרגיה.</td><td class="unit">MeV</td></tr>
+        <tr><td class="sym">\(m_p,\ m_t\)</td><td>המסה של הפרוטון ושל גרעין המטרה.</td><td class="unit">u</td></tr>
+        <tr><td class="sym">\(E_{th}\)</td><td>אנרגיית הפרוטון שבה התגובה נפתחת.</td><td class="unit">MeV</td></tr>
+        <tr><td class="sym">\(n\)</td><td>גרעינים בסנטימטר מעוקב, \(\rho N_A/A\).</td><td class="unit">cm⁻³</td></tr>
+        <tr><td class="sym">\(\lambda\)</td><td>המרחק החופשי הממוצע, מחתך הפעולה שהאוסף נותן באנרגיה הנוכחית.</td><td class="unit">mm</td></tr>
+      </tbody>
+    </table>
+    <p class="not-say"><b>מה הנוסחה לא אומרת:</b> כמה גדול חתך הפעולה מעל הסף. היא רק אומרת מתי הוא מתחיל. ב-Pb, למשל, הסף נמוך, אבל מחסום קולון משאיר את חתך הפעולה זעיר עד כ-10 MeV.</p>
+  </div>
+
+  <div data-callout="lab">
+    <p>הפיזיקה של ריצת ה-Be:</p>
+    <table class="lab-table">
+      <tbody>
+        <tr><th>Geant4</th><td class="v">11.4.2, MT</td></tr>
+        <tr><th>רשימת פיזיקה</th><td class="v">QGSP_BIC_AllHP_EMZ</td></tr>
+        <tr><th>נתוני פרוטונים</th><td class="v">G4TENDL1.4 (TENDL-2019)</td></tr>
+        <tr><th>נתוני נייטרונים</th><td class="v">G4NDL4.7.1</td></tr>
+        <tr><th>ספים (p,n)</th><td class="v">⁷Li 1.88, ⁹Be 2.06, ¹⁹F 4.2 MeV</td></tr>
+        <tr><th>חתכי פעולה של HP</th><td class="v">עד 20 MeV</td></tr>
+        <tr><th>ריבוי</th><td class="v">-n fix</td></tr>
+        <tr><th>מאיפה הנייטרונים</th><td class="v">98.6 % protonInelastic, ⁹Be</td></tr>
+        <tr><th>LiF, 5 MeV, לפרוטון</th><td class="v">AllHP 5.0×10⁻⁴, BIC_HP 0</td></tr>
+      </tbody>
+    </table>
+    <p class="small muted">השורה האחרונה מטבלת הבנצ'מרק של הפרויקט, \(2\times10^{4}\) פרוטונים לכל נקודה.</p>
+  </div>
+</section>
+
+<!-- 8. PLAYGROUND -->
+<section class="section wrap-wide" data-section="playground" id="playground">
+  <div class="section-head"><span class="section-num">8</span><h2>מעבדת התפוקה</h2></div>
+  <p>ארבעה חומרים, אנרגיית כניסה עד 20 MeV, שתי רשימות ושני מצבי ריבוי. הצורות של חתכי הפעולה סכמטיות, והקנה מידה נקבע כך ש-LiF ב-5 MeV נותן \(5.0\times10^{-4}\), כמו בטבלת הבנצ'מרק. כל תפוקה אחרת כאן היא של צעצוע. כמה דברים שכדאי לבדוק:</p>
+  <ul class="quest-list">
+    <li>LiF עם "קסקדה (צעצוע)": מאיזו אנרגיה בכלל מופיעים נייטרונים?</li>
+    <li>LiF עם עיגול: איזה חלק מהתפוקה נעלם מעל 4.2 MeV, ולמה דווקא שם?</li>
+    <li>Be עם עיגול ובלי: פי כמה עולה התפוקה?</li>
+    <li>Pb: מאיזו אנרגיה הוא מתחיל להתחרות ב-Be?</li>
+  </ul>
+  <figure class="sim block-gap"><canvas id="c-lab"></canvas><div class="sim-controls" id="ctl-lab"></div></figure>
+</section>
+
+<!-- 9. GAME -->
+<section class="section wrap-wide" data-section="game" id="game">
+  <div class="section-head"><span class="section-num">9</span><h2>אתגר: לזהות את הרשימה</h2></div>
+  <p>בכל שלב צורך אחר, ואנחנו מרכיבים את הרשימה מהבלוקים: בסיס, נתונים מוערכים, ואפשרות אלקטרומגנטית. הציור מראה מי מטפל בכל חלקיק, והקו המקווקו מסמן את האנרגיה שחשובה בשלב.</p>
+  <p class="muted small">בדיקה ראשונה שמצליחה שווה 3 נקודות, שנייה 2, ואחר כך 1. הכוכבים נקבעים מסכום הנקודות, והממירים משתנים בכל סיבוב.</p>
+  <figure class="sim"><canvas id="c-game"></canvas><div class="sim-controls" id="ctl-game"></div></figure>
+</section>
+
+<!-- 10. TRAPS -->
+<section class="section wrap" data-section="traps" id="traps">
+  <div class="section-head"><span class="section-num">10</span><h2>מלכודות</h2></div>
+  <p>ארבע טעויות על פיזיקה ב-Geant4 שחוזרות גם אצל מי שמריצים אותו שנים. כל אחת עולה, בריצה אמיתית, בתוצאה שנראית סבירה ולא נכונה.</p>
+  <div id="pc-trap1">
+    <figure class="sim"><canvas id="c-trap1"></canvas><div class="sim-controls" id="ctl-trap1"></div></figure>
+  </div>
+  <div id="pc-trap2">
+    <figure class="sim"><canvas id="c-trap2"></canvas><div class="sim-controls" id="ctl-trap2"></div></figure>
+  </div>
+  <div id="pc-trap3">
+    <figure class="sim"><canvas id="c-trap3"></canvas><div class="sim-controls" id="ctl-trap3"></div></figure>
+  </div>
+  <div id="pc-trap4">
+    <figure class="sim"><canvas id="c-trap4"></canvas><div class="sim-controls" id="ctl-trap4"></div></figure>
+  </div>
+</section>
+
+<!-- 11. PROBLEMS -->
+<section class="section wrap" data-section="problems" id="problems">
+  <div class="section-head"><span class="section-num">11</span><h2>תרגילים</h2></div>
+  <p>חמישה חישובים על ספים, ריבוי וחומרים. כדאי לנסות לבד, ולפתוח רמז רק כשנתקעים.</p>
+  <div id="problems-host"></div>
+</section>
+
+<!-- 12. QUIZ -->
+<section class="section wrap" data-section="quiz" id="quiz">
+  <div class="section-head"><span class="section-num">12</span><h2>בוחן</h2></div>
+  <p>חמש שאלות על הפרק ושתיים לחזרה על פרקים 1 ו-2. הציון הטוב ביותר נשמר, ואפשר לנסות שוב כמה פעמים שרוצים.</p>
+  <div id="quiz-host" class="block-gap"></div>
+</section>
+
+<!-- 13. POCKET CARD -->
+<section class="section wrap" data-section="pocket" data-passive id="pocket">
+  <div class="section-head"><span class="section-num">13</span><h2>כרטיס כיס</h2></div>
+  <div class="pocket">
+    <h3>פיזיקה ב-Geant4 על כף היד</h3>
+    <div class="pocket-grid">
+      <div class="pocket-item"><b>תהליך:</b> חתך פעולה (כמה פעמים) ומודל (מה יוצא), כל אחד עם תחום אנרגיה משלו. הטבלה מודפסת בתחילת הריצה: <code dir="ltr">Hadronic Processes for proton</code>.</div>
+      <div class="pocket-item"><b>השם:</b> QGSP מעל 12 GeV, BIC מ-190 MeV, AllHP: נתונים מוערכים לפרוטון ולנייטרון, EMZ: עוצמות עצירה של אפשרות 4.</div>
+      <div class="pocket-item"><b>תחומים:</b> חתכי הפעולה של HP עד 20 MeV, המודל של HP עד 200 MeV. מעל 20 MeV חתך הפעולה מ-G4PARTICLEXS.</div>
+      <div class="pocket-item"><b>סף:</b> \(E_{th} = -Q(m_p+m_t)/m_t\). ל-⁷Li הוא 1.88 MeV, ל-⁹Be 2.06 MeV ול-¹⁹F 4.2 MeV. Pb נפתח בפועל רק מעל כ-10 MeV.</div>
+      <div class="pocket-item"><b>ממיר עבה:</b> \(Y = (N_A/A)\int\sigma/S_m\,dE\). הצפיפות מצטמצמת, ועובי מעבר לטווח לא מוסיף.</div>
+      <div class="pocket-item"><b>ריבוי:</b> מאז 11.2 ParticleHP מעגל את \(\nu\). ב-ldns: <code dir="ltr">-n fix</code> (ברירת מחדל), <code dir="ltr">-n round</code> הוא Geant4 כמו שהוא.</div>
+      <div class="pocket-item"><b>חיתוך ייצור:</b> 0.7 mm לגמא, e⁻ ו-e⁺. לנייטרונים אין.</div>
+      <div class="pocket-item"><b>LiF ב-5 MeV:</b> AllHP \(5.0\times10^{-4}\) לפרוטון, BIC_HP אפס.</div>
+    </div>
+    <div class="pocket-quote">"רשימת פיזיקה היא בחירה. בודקים אותה מול נתונים."</div>
+  </div>
+</section>
+
+</main>
+
+<div data-chapter-nav></div>
+<footer data-footer></footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/contrib/auto-render.min.js"></script>
+<script src="../js/core/fmt.js"></script>
+<script src="../js/core/vec.js"></script>
+<script src="../js/core/complex.js"></script>
+<script src="../js/core/fft.js"></script>
+<script src="../js/core/pulse.js"></script>
+<script src="../js/core/plot.js"></script>
+<script src="../js/core/progress.js"></script>
+<script src="../js/core/canvas.js"></script>
+<script src="../js/core/loop.js"></script>
+<script src="../js/core/coach.js"></script>
+<script src="../js/core/ui.js"></script>
+<script src="../js/sims/ch01/kit.js"></script>
+<script src="../js/sims/ch04/kit.js"></script>
+<script src="../js/sims/ch04/phys-hook.js"></script>
+<script src="../js/sims/ch04/phys-process.js"></script>
+<script src="../js/sims/ch04/phys-lists.js"></script>
+<script src="../js/sims/ch04/phys-xs.js"></script>
+<script src="../js/sims/ch04/phys-yield.js"></script>
+<script src="../js/sims/ch04/phys-mult.js"></script>
+<script src="../js/sims/ch04/phys-lab.js"></script>
+<script src="../js/sims/ch04/phys-game.js"></script>
+<script src="../js/sims/ch04/phys-cuts.js"></script>
+<script src="../js/sims/ch04/phys-vote.js"></script>
+<script src="../js/sims/ch04/phys-pergram.js"></script>
+<script src="../js/sims/ch04/phys-valid.js"></script>
+<script>
+(function () {
+  'use strict';
+  const CH = '04';
+  const U = PHY.ui;
+  const $ = (id) => document.getElementById(id);
+  const TAG = 'הניחוש שלנו';
+
+  /* ---------- 1. Hook: two lists, one converter ---------- */
+  const hook = PHY.sims.physHook($('c-hook'), $('ctl-hook'), { N: 20000, pAll: 5.0e-4, pBic: 0, seed: 682, locked: true });
+  U.PredictCard($('pc-hook'), {
+    chapter: CH, id: 'hook', section: 'hook', tag: TAG,
+    question: `אותו ממיר LiF, אותם פרוטונים של 5 MeV, שתי רשימות רשמיות של Geant4. אחת נותנת אפס נייטרונים, השנייה \\(5.0\\times10^{-4}\\) לפרוטון. מי צודקת?`,
+    options: [
+      { text: `<code dir="ltr">QGSP_BIC_HP</code>: ב-5 MeV ה-LiF עוד מתחת לסף, ואפס הוא התשובה הנכונה.`, why: `הסף של ⁷Li(p,n) הוא 1.88 MeV, הרבה מתחת ל-5 MeV. התגובה פתוחה, ולכן אפס לא יכול להיות נכון.` },
+      { text: `<code dir="ltr">QGSP_BIC_AllHP</code>: מתחת ל-20 MeV היא לוקחת את הפרוטון מנתונים גרעיניים מוערכים, ומודל הקסקדה של השנייה לא מתאים לגרעינים קלים באנרגיות כאלה.`, correct: true },
+      { text: `שתיהן: שני מודלים, שתי תשובות לגיטימיות, והאמת כנראה באמצע.`, why: `פיזיקה לא נקבעת בממוצע של רשימות. כל רשימה בודקים מול נתונים, ובמלכודת 2 נראה שחתך הפעולה של הקסקדה כאן קטן פי 3 עד 100 מהנתונים.` },
+    ],
+    onRun: () => hook.play(3.5),
+    steps: [
+      { hint: `מה הסף של ⁷Li(p,n), ואיפה 5 MeV ביחס אליו?`,
+        work: `הסף הוא 1.88 MeV, ו-5 MeV מעליו. גם ¹⁹F(p,n) נפתחת מעל 4.2 MeV. לכן ממיר LiF חייב לתת נייטרונים ב-5 MeV, ואפס הוא סימן שמשהו ברשימה לא מתאים.` },
+      { hint: `מה שונה בין שתי הרשימות בפרוטון של 5 MeV?`,
+        work: `ב-<code dir="ltr">QGSP_BIC_HP</code> החלק HP חל רק על נייטרונים, והפרוטון עובר למודל הקסקדה הבינארית (Binary Cascade), עם חתך פעולה מפרמטריזציה. ב-<code dir="ltr">QGSP_BIC_AllHP</code> גם הפרוטון מקבל את הנתונים המוערכים, מתחת ל-20 MeV.` },
+      { hint: `מה ראינו בהנפשה, ואיזו רשימה מתאימה לנתונים?`,
+        work: `בנתיב של AllHP נספרו כעשרה נייטרונים, כי \\(2\\times10^{4}\\cdot 5.0\\times10^{-4} = 10\\), ובנתיב של BIC_HP אפס. בגרף התחתון חתך הפעולה של הקסקדה (סכמטי) קטן בהרבה מהנתונים. התשובה: <code dir="ltr">QGSP_BIC_AllHP</code>.` },
+    ],
+    explanation: `<p>הגרף התחתון הוא חתך הפעולה של ⁷Li(p,n), בצורה סכמטית ועם הסף האמיתי. נחזור אליו בסעיף 4.</p>`,
+    sayRight: 'נכון. 5 MeV הם מעל הסף, ואפס הוא סימן אזהרה.',
+    sayWrong: 'גם אני סמכתי פעם על רשימה רשמית. רשמית לא אומר מתאימה.',
+  });
+
+  /* ---------- 2. Process: data set + model ---------- */
+  const proc = PHY.sims.physProcess($('c-proc'), $('ctl-proc'), { mode: 'card', locked: true, chapter: CH, section: 'process' });
+  U.PredictCard($('pc-proc'), {
+    chapter: CH, id: 'process', section: 'process', tag: TAG,
+    question: `פרוטון של 13 MeV, ה-cut-off של הלייזר של 30 J, ופרוטון של 100 MeV, ליד ה-cut-off של ELIMAIA. מאיפה Geant4 לוקח את חתך הפעולה של <code dir="ltr">protonInelastic</code> לכל אחד מהם?`,
+    options: [
+      { text: `בשניהם מהנתונים של HP: <code dir="ltr">ProtonHPInelastic</code> עובד עד 200 MeV.`, why: `200 MeV הוא התחום של המודל, מה שיוצא מהתגובה. לחתך הפעולה של HP יש שורה נפרדת, <code dir="ltr">ProtonHPInelasticXS</code>, והיא נגמרת ב-20 MeV.` },
+      { text: `ב-13 MeV מ-<code dir="ltr">ProtonHPInelasticXS</code>, ב-100 MeV מ-<code dir="ltr">protonParticleXS</code>, ובשניהם התוצרים מהמודל של HP.`, correct: true },
+      { text: `ב-100 MeV מ-Binary Cascade.`, why: `Binary Cascade מתחיל ב-190 MeV ברשימה הזאת. וחוץ מזה, קסקדה היא מודל: היא קובעת מה יוצא, לא כמה פעמים.` },
+    ],
+    onRun: () => proc.play(3),
+    steps: [
+      { hint: `באילו שורות <code dir="ltr">Cr_sctns</code> נמצאת 13 MeV?`,
+        work: `בשתיהן: <code dir="ltr">ProtonHPInelasticXS</code> מכסה 0 עד 20 MeV, ו-<code dir="ltr">protonParticleXS</code> מכסה הכול עד 100 TeV. מתחת ל-20 MeV Geant4 לוקח את האוסף של HP, ולכן ב-13 MeV חתך הפעולה הוא זה של הקובץ המוערך.` },
+      { hint: `ומה נשאר ב-100 MeV?`,
+        work: `מעל 20 MeV האוסף של HP כבר לא חל. נשאר <code dir="ltr">protonParticleXS</code>, כלומר הנתונים של G4PARTICLEXS.` },
+      { hint: `ומי קובע מה יוצא מהתגובה, בשתי האנרגיות?`,
+        work: `<code dir="ltr">ProtonHPInelastic</code> מכסה 0 עד 200 MeV, ו-Binary Cascade מתחיל רק ב-190 MeV. לכן בשתיהן התוצרים מהמודל של HP. התשובה: ב-13 MeV חתך הפעולה מ-<code dir="ltr">ProtonHPInelasticXS</code>, ב-100 MeV מ-<code dir="ltr">protonParticleXS</code>, והתוצרים בשתיהן מ-<code dir="ltr">ProtonHPInelastic</code>.` },
+    ],
+    explanation: `<p>הסליידר פתוח. מה קורה בין 190 ל-200 MeV, שם שני מודלים חופפים? ומי מטפל בפרוטון של 1 TeV?</p>`,
+    sayRight: 'נכון. המודל עד 200 MeV, חתך הפעולה של HP רק עד 20.',
+    sayWrong: 'גם אני קראתי פעם רק את השורה של המודל. יש שתי שורות.',
+  });
+
+  /* ---------- 3. Lists: the name ---------- */
+  const lists = PHY.sims.physLists($('c-lists'), $('ctl-lists'), { mode: 'card', locked: true, chapter: CH, section: 'lists' });
+  U.PredictCard($('pc-lists'), {
+    chapter: CH, id: 'lists', section: 'lists', tag: TAG,
+    question: `בשם <code dir="ltr">QGSP_BIC_AllHP_EMZ</code>, איזה בלוק קובע מאיפה יבואו חתך הפעולה והתוצרים של תגובה גרעינית של פרוטון של 5 MeV?`,
+    options: [
+      { text: `QGSP: המילה הראשונה היא המודל הראשי.`, why: `בלוג של ldns QGSP מתחיל רק ב-12 GeV. הסדר בשם לא אומר מי חשוב: כל בלוק אחראי על תחום אחר.` },
+      { text: `BIC: קסקדה מתאימה לאנרגיות נמוכות.`, why: `ברשימה הזאת BIC מתחיל ב-190 MeV, כי מתחתיו AllHP לוקח את הפרוטון. ברשימה בלי AllHP, BIC כן היה מטפל ב-5 MeV, וזה בדיוק מה שנתן אפס בפתיחה.` },
+      { text: `AllHP.`, correct: true },
+      { text: `EMZ: היא קובעת איך הפרוטון מאט.`, why: `EMZ קובעת כמה מהר הפרוטון מאט, ולכן כמה דרך יש לו לתגובה. את התגובה עצמה, כמה פעמים ומה יוצא, היא לא קובעת.` },
+    ],
+    onRun: () => lists.play(4),
+    steps: [
+      { hint: `מאיזו אנרגיה מתחיל כל מודל, לפי הטבלה בסעיף הקודם?`,
+        work: `QGSP מ-12 GeV, FTFP מ-3 GeV, Bertini מ-1 GeV, Binary Cascade מ-190 MeV, והמודל של HP מ-0 עד 200 MeV. ב-5 MeV רק HP חל.` },
+      { hint: `ומה מביא את המודל של HP לפרוטון?`,
+        work: `ב-<code dir="ltr">QGSP_BIC_HP</code> ה-HP חל רק על נייטרונים. הסיומת AllHP היא שמוסיפה את ParticleHP לפרוטון ולשאר החלקיקים הקלים, עם הנתונים של G4TENDL.` },
+      { hint: `מה ההנפשה סימנה בשורות של הפרוטון ב-5 MeV?`,
+        work: `גם המודל (<code dir="ltr">ProtonHPInelastic</code>) וגם חתך הפעולה (HP data) מסומנים בצבע של הבלוק <code dir="ltr">_AllHP</code>. התשובה: AllHP.` },
+    ],
+    explanation: `<p>אפשר להרכיב רשימות אחרות. מה קורה לשורה של הנייטרון כשמורידים את ה-HP? ומה קורה לתפוקה של LiF?</p>`,
+    sayRight: 'נכון. ב-5 MeV רק AllHP פועל על התגובה.',
+    sayWrong: 'גם אני חשבתי שהמילה הראשונה היא העיקר. ב-5 MeV היא לא פועלת בכלל.',
+  });
+
+  /* ---------- 4. Data: threshold ---------- */
+  const xs = PHY.sims.physXs($('c-data'), $('ctl-data'), { mode: 'card', nucleus: 'Li7', E: 1, locked: true, chapter: CH, section: 'data' });
+  U.PredictCard($('pc-data'), {
+    chapter: CH, id: 'data', section: 'data', tag: TAG,
+    question: `ב-⁷Li(p,n) הערך הוא \\(Q = -1.644\\) MeV. מאיזו אנרגיית פרוטון התגובה נפתחת?`,
+    options: [
+      { text: `בדיוק 1.644 MeV: זו האנרגיה שחסרה.`, why: `ככה זה היה אם ⁷Li היה עוצר את הפרוטון במקום. אבל התנע נשמר: אחרי התגובה המערכת כולה ממשיכה לנוע, וחלק מהאנרגיה הולך לתנועה הזאת ולא לתגובה.` },
+      { text: `קצת יותר: 1.88 MeV.`, correct: true },
+      { text: `בכל אנרגיה, קצת: מנהור קוונטי עוקף כל סף.`, why: `מנהור עוזר לעבור את מחסום קולון, ולכן ליד הסף חתך הפעולה קטן אבל לא אפס. שימור אנרגיה הוא לא עוקף: מתחת לסף אין מספיק אנרגיה ליצור את ⁷Be ואת הנייטרון.` },
+    ],
+    onRun: () => xs.play(3.5),
+    steps: [
+      { hint: `כמה מהאנרגיה של הפרוטון זמינה לתגובה, אחרי שמשלמים על תנועת מרכז המסה?`,
+        work: `במערכת מרכז המסה זמין רק החלק \\(E\\,m_t/(m_p+m_t)\\), כאשר \\(m_t\\) המסה של גרעין המטרה. השאר הוא האנרגיה הקינטית של המערכת כולה, והיא נשמרת.` },
+      { hint: `מתי החלק הזה מגיע ל-\\(|Q|\\)?`,
+        work: `\\(E_{th}\\,m_t/(m_p+m_t) = |Q|\\), כלומר \\(E_{th} = -Q\\,(m_p+m_t)/m_t\\).` },
+      { hint: `נציב את המסות של הפרוטון ושל ⁷Li.`,
+        work: `\\(m_p = 1.0073\\) u, \\(m_t = 7.0160\\) u: \\(E_{th} = 1.644\\cdot 8.0233/7.0160 = 1.880\\) MeV. התשובה: 1.88 MeV, בדיוק איפה שההנפשה מצאה שהתגובה נפתחת.` },
+    ],
+    explanation: `<p>אפשר לבחור גרעין אחר ולהזיז את האנרגיה. איפה הסף של ⁹Be? ולמה ל-Pb אין כאן סף חד?</p>`,
+    sayRight: 'נכון. התנע גובה את שלו, וצריך 1.88 MeV.',
+    sayWrong: 'גם אני שכחתי פעם את מרכז המסה. הוא תמיד לוקח חלק.',
+  });
+
+  /* ---------- 5. Thick-target yield ---------- */
+  const yld = PHY.sims.physYield($('c-yield'), $('ctl-yield'), { E0: 13, rho2: 0.924, N: 2000, seed: 31, locked: true, chapter: CH, section: 'yield' });
+  U.PredictCard($('pc-yield'), {
+    chapter: CH, id: 'yield', section: 'yield', tag: TAG,
+    question: `פרוטונים של 13 MeV נעצרים ב-Be רגיל וב-Be בחצי צפיפות. באיזה ממיר ייווצרו יותר נייטרונים לפרוטון?`,
+    options: [
+      { text: `ב-Be הרגיל, פי 2: יש בו פי 2 גרעינים בכל מילימטר.`, why: `נכון שיש פי 2 גרעינים בכל מילימטר. אבל גם עוצמת העצירה גדולה פי 2, והפרוטון נעצר אחרי חצי דרך. פי 2 גרעינים כפול חצי דרך.` },
+      { text: `בשניהם אותו מספר.`, correct: true },
+      { text: `ב-Be הדליל: הדרך ארוכה פי 2, ויש יותר זמן לתגובה.`, why: `הדרך באמת ארוכה פי 2, אבל בכל מילימטר יש חצי גרעינים. התגובה לא תלויה בזמן, אלא במספר הגרעינים שהפרוטון פוגש עד שהוא נעצר.` },
+    ],
+    onRun: () => yld.play(3.5),
+    steps: [
+      { hint: `כמה תגובות יש בצעד שבו הפרוטון מאבד \\(dE\\)?`,
+        work: `\\(dY = n\\sigma\\,dx\\), ו-\\(dx = dE/S\\). לכן \\(dY = n\\sigma\\,dE/S\\).` },
+      { hint: `איך \\(n\\) ו-\\(S\\) תלויים בצפיפות?`,
+        work: `\\(n = \\rho N_A/A\\), ועוצמת העצירה היא \\(S = \\rho S_m\\), כאשר \\(S_m\\) תלויה רק בחומר ובאנרגיה. ביחס \\(n/S\\) הצפיפות מצטמצמת: \\(n/S = N_A/(A\\,S_m)\\).` },
+      { hint: `ומה ההנפשה ספרה?`,
+        work: `שני הממירים נתנו אותו מספר נייטרונים בתוך השגיאה, וההיסטוגרמה של הדליל ארוכה פי 2 ונמוכה פי 2. התשובה: בשניהם אותו מספר.` },
+    ],
+    explanation: `<p>הסליידרים פתוחים: צפיפות אחרת לממיר השני, ואנרגיה אחרת לפרוטונים. מה קורה לתפוקה כשמורידים את האנרגיה מ-13 ל-5 MeV?</p>`,
+    sayRight: 'נכון. פי 2 גרעינים, חצי דרך: אותו מספר.',
+    sayWrong: 'גם אני ספרתי פעם רק גרעינים במילימטר. הדרך מתקצרת באותו יחס.',
+  });
+
+  /* ---------- 6. Validation: multiplicity ---------- */
+  const mult = PHY.sims.physMult($('c-mult'), $('ctl-mult'), { nucleus: 'F19', E: 5, N: 1000, seed: 100, locked: true, chapter: CH, section: 'validate' });
+  U.PredictCard($('pc-mult'), {
+    chapter: CH, id: 'validate', section: 'validate', tag: TAG,
+    question: `¹⁹F ב-5 MeV, \\(\\nu = 0.07\\). Geant4 11.4 כמו שהוא, עם העיגול, מריץ 1000 תגובות. כמה נייטרונים ייצאו?`,
+    options: [
+      { text: `בערך 70: הממוצע נשמר, כמו בקובץ.`, why: `ככה זה עבד עד Geant4 11.1, שהגריל בין 0 ל-1 כך שהממוצע נשמר. העיגול עובד אחרת: הוא נותן את אותו מספר בכל תגובה.` },
+      { text: `אפס.`, correct: true },
+      { text: `1000: לפחות נייטרון אחד בכל תגובה.`, why: `בתגובה של ¹⁹F לא תמיד יוצא נייטרון: לרוב יוצאים חלקיקים אחרים. בגלל זה \\(\\nu\\) קטן מ-1.` },
+    ],
+    onRun: () => mult.play(3),
+    steps: [
+      { hint: `מה עושה העיגול ל-0.07?`,
+        work: `המספר השלם הקרוב ל-0.07 הוא 0. העיגול לא מגריל: כל תגובה מקבלת את אותו מספר, 0 נייטרונים.` },
+      { hint: `כמה נייטרונים יוצאים מ-1000 תגובות כאלה?`,
+        work: `\\(1000\\times 0 = 0\\). כל עוד \\(\\nu < 0.5\\), ¹⁹F לא נותן אף נייטרון, ובממיר LiF כל הנייטרונים של F פשוט נעלמים.` },
+      { hint: `ומה נותנת הגרלה מפואסון עם ממוצע 0.07?`,
+        work: `בכל תגובה מספר אקראי עם ממוצע 0.07: לרוב 0, לפעמים 1. ב-1000 תגובות יוצאים כ-70 נייטרונים, כמו בעמודות הירוקות. התשובה לשאלה, עם העיגול: אפס.` },
+    ],
+    explanation: `<p>אפשר לעבור ל-⁹Be עם \\(\\nu = 0.8\\), ערך לדוגמה. לאיזה כיוון טועה העיגול שם, ובכמה?</p>`,
+    sayRight: 'נכון. 0.07 מתעגל לאפס, בכל תגובה.',
+    sayWrong: 'גם הפרויקט ציפה ל-70. ככה התגלה הבאג.',
+  });
+
+  /* ---------- 8. Playground ---------- */
+  PHY.sims.physLab($('c-lab'), $('ctl-lab'), { mat: 'LiF', E0: 5, list: 'allhp', mode: 'fix', chapter: CH, section: 'playground' });
+
+  /* ---------- 9. Game ---------- */
+  PHY.sims.physGame($('c-game'), $('ctl-game'), { chapter: CH, section: 'game' });
+
+  /* ---------- 10. Traps ---------- */
+  const trapDone = {};
+  const trapFinished = (name) => {
+    trapDone[name] = true;
+    if (trapDone.a && trapDone.b && trapDone.c && trapDone.d) PHY.progress.markSection(CH, 'traps');
+  };
+
+  const cuts = PHY.sims.physCuts($('c-trap1'), $('ctl-trap1'), { N: 3e6, p: 4.47e-4, seed: 12, locked: true });
+  U.PredictCard($('pc-trap1'), {
+    chapter: CH, id: 'trap1', tag: 'מלכודת 1: עוד פיזיקה, תוצאה טובה יותר',
+    question: `בריצת ה-Be חיתוך הטווח הוא 0.7 mm, ולאלקטרונים ב-Be זה סף של 366.6 keV. מורידים אותו ל-1 µm, כדי ש-Geant4 ייצור כל אלקטרון. מה יקרה לתפוקת הנייטרונים?`,
+    options: [
+      { text: `היא תהיה מדויקת יותר, וכנראה גבוהה יותר: יותר פיזיקה.`, why: `יותר פרטים, אבל לא על הנייטרונים. האלקטרונים לוקחים מהפרוטון את אותה אנרגיה שהוא היה מאבד בכל מקרה, רק בחתיכות נפרדות.` },
+      { text: `אותה תפוקה בתוך השגיאה, והריצה איטית יותר.`, correct: true },
+      { text: `נמוכה יותר: האלקטרונים גונבים מהפרוטון אנרגיה.`, why: `הפרוטון מאבד את אותה אנרגיה עם חיתוך גבוה או נמוך. עם חיתוך גבוה היא נרשמת כאיבוד רציף, ועם נמוך כאלקטרונים. הקצב שבו הוא מאט לא משתנה.` },
+    ],
+    onRun: () => cuts.play(3),
+    steps: [
+      { hint: `מה האנרגיה הכי גבוהה שפרוטון של 13 MeV יכול לתת לאלקטרון?`,
+        work: `\\(T_{max} \\approx 2m_ec^2\\beta^2\\gamma^2\\). ב-13 MeV: \\(\\gamma = 1.0139\\), \\(\\beta^2 = 0.0271\\), ולכן \\(T_{max} \\approx 2\\cdot 511\\cdot 0.0271\\cdot 1.028 = 28\\) keV.` },
+      { hint: `ומה זה אומר עם הסף של 366.6 keV, ועם סף של כ-1 keV?`,
+        work: `עם ברירת המחדל הפרוטון לא יוצר אף אלקטרון משני: 28 keV קטן מ-366.6 keV, וכל האיבוד שלו רציף. עם 1 µm הסף יורד לגבול התחתון, כ-1 keV, והפרוטון יוצר הרבה אלקטרונים, כל אחד מסלול ש-Geant4 צריך להעביר.` },
+      { hint: `האם זה משנה כמה אנרגיה הפרוטון מאבד בכל מילימטר?`,
+        work: `לא. האנרגיה שהולכת לאלקטרונים הייתה נרשמת אחרת כאיבוד רציף. הפרוטון מאט באותו קצב, ולכן תפוקת הנייטרונים זהה: בהנפשה שני הנתיבים נתנו כ-1341 נייטרונים עם פיזור של כ-37. התשובה: אותה תפוקה, וריצה איטית יותר.` },
+    ],
+    onDone: () => trapFinished('a'),
+    sayRight: 'נכון. עוד מסלולים, אותם נייטרונים.',
+    sayWrong: 'גם אני הורדתי פעם חיתוך כדי לשפר תוצאה. שיפרתי רק את זמן הריצה.',
+  });
+
+  const vote = PHY.sims.physVote($('c-trap2'), $('ctl-trap2'), { locked: true });
+  U.PredictCard($('pc-trap2'), {
+    chapter: CH, id: 'trap2', tag: 'מלכודת 2: הרשימה היא הפיזיקה',
+    question: `שלוש רשימות רשמיות, ממיר LiF, פרוטונים של 5 MeV: <code dir="ltr">QGSP_BIC_AllHP</code> נותנת \\(5.0\\times10^{-4}\\), ו-<code dir="ltr">QGSP_BIC_HP</code> ו-<code dir="ltr">QGSP_INCLXX_HP</code> נותנות כמעט אפס. במה כדאי להאמין?`,
+    options: [
+      { text: `ברוב: שתיים מתוך שלוש אומרות כמעט אפס.`, why: `שתי הרשימות שבאות מאותה משפחה של מודלי קסקדה טועות יחד, מאותה סיבה. הצבעה בין מודלים לא מחליפה השוואה לנתונים.` },
+      { text: `בממוצע של שלושתן, כ-\\(1.7\\times10^{-4}\\).`, why: `ממוצע של תשובה נכונה ושתי שגויות הוא תשובה שגויה. השגיאה כאן היא לא רעש שמתקזז, אלא חתך פעולה שקטן פי 3 עד 100.` },
+      { text: `ברשימה שחתכי הפעולה שלה מתאימים לקובץ המוערך.`, correct: true },
+    ],
+    onRun: () => vote.play(3.5),
+    steps: [
+      { hint: `מה הפרויקט השווה, ולמה?`,
+        work: `את חתך הפעולה ש-Geant4 משתמש בו מול הקובץ המוערך, לכל רשימה. הקובץ הוא הסיכום הטוב ביותר של המדידות, ולכן הוא השופט.` },
+      { hint: `מה יצא היחס לכל רשימה ב-5 MeV?`,
+        work: `ל-AllHP היחס 1.00, כי היא לוקחת את הנתונים עצמם. לקסקדות, מתחת לכ-10 MeV חתך הפעולה קטן פי 3 עד 100 (בהנפשה, בצורה סכמטית, כ-0.03 ב-5 MeV).` },
+      { hint: `אז במה נאמין?`,
+        work: `ברשימה שעברה את הבדיקה. התשובה: <code dir="ltr">QGSP_BIC_AllHP</code>, כי חתכי הפעולה שלה מתאימים לקובץ המוערך. רשימה רשמית היא נקודת התחלה, לא תוצאה מאומתת.` },
+    ],
+    onDone: () => trapFinished('b'),
+    sayRight: 'נכון. נתונים מכריעים, לא רוב.',
+    sayWrong: 'גם אני ספרתי פעם קולות. הנתונים לא משתתפים בהצבעה.',
+  });
+
+  const pergram = PHY.sims.physPerGram($('c-trap3'), $('ctl-trap3'), { ratio: 10, locked: true });
+  U.PredictCard($('pc-trap3'), {
+    chapter: CH, id: 'trap3', tag: 'מלכודת 3: חתך הפעולה בוחר את החומר',
+    question: `נניח שבאנרגיה מסוימת חתך הפעולה (p,n) של Pb גדול פי 10 מזה של ⁷Li. פרוטון עובר אותה כמות חומר, אותו מספר גרמים לסנטימטר רבוע, בכל אחד. איפה יהיו יותר תגובות?`,
+    options: [
+      { text: `ב-Pb, פי 10: חתך הפעולה גדול פי 10.`, why: `חתך הפעולה הוא לגרעין אחד. בגרם של Pb יש פי 29.5 פחות גרעינים מבגרם של ⁷Li, כי כל גרעין כבד פי 29.5.` },
+      { text: `ב-⁷Li, בערך פי 3.`, correct: true },
+      { text: `אותו מספר: חתך פעולה כפול צפיפות מצטמצם.`, why: `הצפיפות באמת מצטמצמת, אבל המסה של הגרעין לא. מספר הגרעינים בגרם הוא \\(N_A/A\\), והוא שונה מאוד בין ⁷Li ל-Pb.` },
+    ],
+    onRun: () => pergram.play(3.6),
+    steps: [
+      { hint: `כמה גרעינים יש בגרם של ⁷Li ובגרם של Pb?`,
+        work: `\\(N_A/A\\): ל-⁷Li \\(6.022\\times10^{23}/7.016 = 8.58\\times10^{22}\\), ול-Pb \\(6.022\\times10^{23}/207.2 = 2.91\\times10^{21}\\). פי 29.5 פחות ב-Pb.` },
+      { hint: `ומה המכפלה של חתך הפעולה במספר הגרעינים?`,
+        work: `ל-Pb: \\(10\\times(1/29.5) = 0.34\\) ביחס ל-⁷Li. כלומר ב-⁷Li יש \\(29.5/10 = 2.95\\) יותר תגובות.` },
+      { hint: `ומה עם עוצמת העצירה?`,
+        work: `לכל גרם, Pb עוצר פרוטונים קצת לאט יותר מ-⁷Li, וזה עוזר לו מעט, אבל רחוק מפקטור 30. התשובה: ב-⁷Li, בערך פי 3. כדי ש-Pb ישתווה, חתך הפעולה שלו צריך להיות גדול בערך פי 30 (תרגיל 5).` },
+    ],
+    onDone: () => trapFinished('c'),
+    sayRight: 'נכון. גרעין כבד הוא פחות גרעינים בכל גרם.',
+    sayWrong: 'גם אני בחרתי פעם חומר לפי חתך פעולה. צריך לחלק ב-A.',
+  });
+
+  const valid = PHY.sims.physValid($('c-trap4'), $('ctl-trap4'), { locked: true });
+  U.PredictCard($('pc-trap4'), {
+    chapter: CH, id: 'trap4', tag: 'מלכודת 4: HP מדויק בכל מקום',
+    question: `ב-ELIMAIA הפרוטונים מגיעים ל-102 MeV, וממיר LiF רץ עם <code dir="ltr">QGSP_BIC_AllHP_EMZ</code>. עד כמה אפשר לסמוך על הנייטרונים מפרוטונים מעל 20 MeV?`,
+    options: [
+      { text: `כמו על אלה שמתחת ל-20 MeV: AllHP פירושו נתונים מוערכים עד 200 MeV.`, why: `עד 200 MeV מגיע המודל של HP. חתך הפעולה של HP נגמר ב-20 MeV, ומעליו הוא בא מ-G4PARTICLEXS.` },
+      { text: `לא מאומת: ל-⁷Li אין נתונים מוערכים מעל 20 MeV, ול-¹⁹F חתך הפעולה שם נמוך מהקובץ.`, correct: true },
+      { text: `אין כאלה: מעל 20 MeV HP מפסיק, ולא נוצרים נייטרונים.`, why: `נוצרים, והרבה: המודל של HP ממשיך עד 200 MeV, וחתך הפעולה בא מ-G4PARTICLEXS. הבעיה היא לא שאין נייטרונים, אלא שלא בדקנו אותם.` },
+    ],
+    onRun: () => valid.play(3),
+    steps: [
+      { hint: `מאיפה בא חתך הפעולה מעל 20 MeV?`,
+        work: `מ-<code dir="ltr">protonParticleXS</code>, כלומר מ-G4PARTICLEXS. ל-F ול-Be הוא נמוך שם ב-12% עד 27% מהקבצים המוערכים.` },
+      { hint: `ומה עם ⁷Li?`,
+        work: `הקובץ של ⁷Li מ-ENDF/B-VIII.0 נגמר ב-20 MeV. מעליו אין למה להשוות: חתך הפעולה מ-G4PARTICLEXS, והתוצרים הם המשך של הנתונים מ-20 MeV.` },
+      { hint: `אז מה אפשר להגיד על הנייטרונים מעל 20 MeV ב-LiF?`,
+        work: `שהם מחושבים, אבל לא מאומתים. התשובה: לא מאומת. ב-LiF עם פרוטונים של 30 J, שכולם מתחת ל-13 MeV, הבעיה לא קיימת.` },
+    ],
+    onDone: () => trapFinished('d'),
+    sayRight: 'נכון. AllHP מדויק רק איפה שיש נתונים.',
+    sayWrong: 'גם אני חשבתי ש-200 MeV הוא הגבול. של המודל, לא של הנתונים.',
+  });
+
+  /* ---------- 11. Problems ---------- */
+  const probs = $('problems-host');
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 1: הסף של ליתיום',
+    text: `ל-⁷Li(p,n)⁷Be הערך הוא \\(Q = -1.644\\) MeV. מסת הפרוטון \\(1.0073\\) u ומסת ⁷Li \\(7.0160\\) u. מה אנרגיית הסף של הפרוטון?`,
+    fields: [{ label: '\\(E_{th}\\)', answer: 1.88, unit: 'MeV' }],
+    steps: [
+      { hint: `איזה חלק מאנרגיית הפרוטון זמין לתגובה?`,
+        work: `במרכז המסה זמין \\(E\\,m_t/(m_p+m_t)\\). השאר הוא תנועה של המערכת כולה.` },
+      { hint: `מתי החלק הזמין שווה ל-\\(|Q|\\)?`,
+        work: `\\(E_{th} = -Q\\,(m_p+m_t)/m_t = 1.644\\cdot(1.0073+7.0160)/7.0160\\).` },
+      { hint: `נחשב.`,
+        work: `\\(1.644\\cdot 8.0233/7.0160 = 1.644\\cdot 1.1436 = 1.880\\) MeV. התשובה: 1.88 MeV.` },
+    ],
+  });
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 2: הסף של בריליום',
+    text: `ל-⁹Be(p,n)⁹B הערך הוא \\(Q = -1.850\\) MeV, ומסת ⁹Be היא \\(9.0122\\) u. מה אנרגיית הסף?`,
+    fields: [{ label: '\\(E_{th}\\)', answer: 2.06, unit: 'MeV' }],
+    steps: [
+      { hint: `איזו נוסחה מצאנו בשאלה הקודמת?`,
+        work: `\\(E_{th} = -Q\\,(m_p+m_t)/m_t\\).` },
+      { hint: `מה היחס \\((m_p+m_t)/m_t\\) ל-⁹Be?`,
+        work: `\\((1.0073+9.0122)/9.0122 = 10.0195/9.0122 = 1.1118\\).` },
+      { hint: `נכפול.`,
+        work: `\\(1.850\\cdot 1.1118 = 2.057\\) MeV. התשובה: 2.06 MeV, ולכן ב-Be אין נייטרונים מפרוטונים שמתחת ל-2.06 MeV.` },
+    ],
+  });
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 3: עיגול מול פואסון',
+    text: `בערוץ מסוים \\(\\nu = 0.49\\). כמה נייטרונים יוצאים מ-1000 תגובות, בממוצע, עם העיגול של Geant4 11.4 כמו שהוא, ועם התיקון של ldns?`,
+    fields: [
+      { label: 'עיגול', answer: 0, unit: '', abs: 0.5 },
+      { label: 'פואסון', answer: 490, unit: '' },
+    ],
+    steps: [
+      { hint: `לאיזה מספר שלם מתעגל ה-\\(\\nu\\) של הערוץ?`,
+        work: `0.49 קטן מ-0.5, ולכן מתעגל ל-0. כל תגובה נותנת 0 נייטרונים.` },
+      { hint: `וכמה זה ב-1000 תגובות?`,
+        work: `\\(1000\\times 0 = 0\\) נייטרונים עם העיגול.` },
+      { hint: `ומה הממוצע של הגרלה מפואסון, עם אותו \\(\\nu\\) כממוצע?`,
+        work: `0.49 לכל תגובה, ולכן \\(1000\\times 0.49 = 490\\) בממוצע. התשובה: 0 עם העיגול, 490 עם התיקון. הפרש של 0.02 ב-\\(\\nu\\), מ-0.49 ל-0.51, היה הופך את העיגול ל-1000.` },
+    ],
+  });
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 4: גרעינים בסנטימטר מעוקב',
+    text: `ב-Be יש \\(1.235\\times10^{23}\\) אטומים ב-cm³, וב-Pb \\(3.30\\times10^{22}\\). פי כמה יותר גרעינים בסנטימטר מעוקב של Be?`,
+    fields: [{ label: 'היחס', answer: 3.74, unit: '' }],
+    steps: [
+      { hint: `איך משווים שני מספרים כאלה?`,
+        work: `מחלקים: \\(1.235\\times10^{23}/3.30\\times10^{22}\\).` },
+      { hint: `נחשב את החזקות ואת המנה.`,
+        work: `\\(12.35\\times10^{22}/3.30\\times10^{22} = 12.35/3.30\\).` },
+      { hint: `ומה זה אומר, אם Pb צפוף פי 6?`,
+        work: `\\(12.35/3.30 = 3.74\\). אף ש-Pb צפוף פי 6, בכל cm³ של Be יש פי 3.74 יותר גרעינים, כי גרעין של Pb כבד פי 23. התשובה: 3.74.` },
+    ],
+  });
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 5: כמה חתך פעולה צריך עופרת',
+    text: `לכל גרם של חומר, בהנחה שעוצמת העצירה דומה, פי כמה צריך להיות חתך הפעולה של Pb (\\(A = 207.2\\)) מזה של ⁷Li (\\(A = 7.016\\)) כדי לתת אותו מספר תגובות?`,
+    fields: [{ label: 'פי', answer: 29.5, unit: '' }],
+    steps: [
+      { hint: `מה מספר הגרעינים בגרם?`,
+        work: `\\(N_A/A\\): פרופורציוני ל-\\(1/A\\).` },
+      { hint: `מתי \\(\\sigma\\cdot N_A/A\\) שווה בשני החומרים?`,
+        work: `\\(\\sigma_{Pb}/207.2 = \\sigma_{Li}/7.016\\), כלומר \\(\\sigma_{Pb}/\\sigma_{Li} = 207.2/7.016\\).` },
+      { hint: `נחשב.`,
+        work: `\\(207.2/7.016 = 29.5\\). התשובה: פי 29.5, בערך פי 30. זה הפקטור מהקובץ README של הפרויקט, ולכן Pb לא מתחרה בממירים קלים מתחת ל-10 MeV.` },
+    ],
+  });
+
+  /* ---------- 12. Quiz ---------- */
+  U.Quiz($('quiz-host'), {
+    chapter: CH, section: 'quiz',
+    questions: [
+      {
+        type: 'mc',
+        q: `לפי הטבלה בתחילת הריצה, מאיפה בא חתך הפעולה של <code dir="ltr">protonInelastic</code> לפרוטון של 8 MeV?`,
+        options: [`<code dir="ltr">ProtonHPInelasticXS</code>`, `<code dir="ltr">protonParticleXS</code>`, `<code dir="ltr">Binary Cascade</code>`, `<code dir="ltr">BarashenkovGlauberGribov</code>`],
+        answer: 0,
+        steps: [
+          { hint: `אילו שורות <code dir="ltr">Cr_sctns</code> חלות ב-8 MeV?`,
+            work: `<code dir="ltr">ProtonHPInelasticXS</code> מ-0 עד 20 MeV, ו-<code dir="ltr">protonParticleXS</code> מ-0 עד 100 TeV. Binary Cascade הוא מודל, ו-BarashenkovGlauberGribov שייך לפיזור האלסטי.` },
+          { hint: `מי משתמשים בו מתחת ל-20 MeV?`,
+            work: `האוסף של HP, ולכן היחס לקובץ המוערך יוצא 1.00. התשובה: <code dir="ltr">ProtonHPInelasticXS</code>.` },
+        ],
+      },
+      {
+        type: 'mc',
+        q: `מה מוסיפה הסיומת <code dir="ltr">_EMZ</code> לשם של רשימה?`,
+        options: [`נתונים מוערכים לנייטרונים`, `את האפשרות 4 של הפיזיקה האלקטרומגנטית, עם עוצמות עצירה מדויקות באנרגיה נמוכה`, `מודל קסקדה לגרעינים קלים`, `פיזור תרמי של נייטרונים`],
+        answer: 1,
+        steps: [
+          { hint: `לאיזה חלק של הפיזיקה שייכות האותיות EM?`,
+            work: `לפיזיקה האלקטרומגנטית: יינון, פיזור מרובה, ברמסשטרלונג.` },
+          { hint: `ולמה ldns צריך אותה?`,
+            work: `התפוקה בממיר עבה הולכת כמו \\(\\int\\sigma/S_m\\,dE\\), ולכן עוצמת העצירה באנרגיה נמוכה משנה ישירות. התשובה: האפשרות 4 של הפיזיקה האלקטרומגנטית.` },
+        ],
+      },
+      {
+        type: 'num',
+        q: `באיזה אחוז Geant4 11.4 כמו שהוא מגזים במספר הנייטרונים בערוץ שבו \\(\\nu = 0.8\\)?`,
+        answer: 25, unit: '%',
+        steps: [
+          { hint: `לאיזה מספר שלם מתעגל 0.8?`,
+            work: `ל-1: כל תגובה נותנת נייטרון אחד, במקום 0.8 בממוצע.` },
+          { hint: `מה היחס בין 1 ל-0.8?`,
+            work: `\\(1/0.8 = 1.25\\), כלומר גבוה ב-25%, כמו ש-Be יצא בלי התיקון. התשובה: 25%.` },
+        ],
+      },
+      {
+        type: 'mc',
+        q: `לאילו חלקיקים חל חיתוך הטווח של 0.7 mm בריצת ה-Be?`,
+        options: [`לכל החלקיקים`, `לנייטרונים בלבד`, `לגמא, לאלקטרונים ולפוזיטרונים`, `לפרוטונים בלבד`],
+        answer: 2,
+        steps: [
+          { hint: `מה מראה טבלת הזוגות בתחילת הריצה?`,
+            work: `<code dir="ltr">gamma 700 um</code>, <code dir="ltr">e- 700 um</code>, <code dir="ltr">e+ 700 um</code>, ולפרוטונים 0.` },
+          { hint: `ומה עם נייטרונים?`,
+            work: `לנייטרונים אין חיתוך ייצור: כל נייטרון נוצר ומועבר. התשובה: לגמא, לאלקטרונים ולפוזיטרונים.` },
+        ],
+      },
+      {
+        type: 'mc',
+        q: `ב-ELIMAIA, עם פרוטונים עד 102 MeV וממיר Pb בעובי 16 mm, מאיפה באים רוב הנייטרונים ביחס לגבול של 20 MeV, ומה זה אומר על האימות?`,
+        options: [`מפרוטונים מתחת ל-20 MeV, ולכן הכול מאומת`, `מפרוטונים מעל 20 MeV, ולכן חתך הפעולה שלהם בא מ-G4PARTICLEXS ולא מהנתונים של HP`, `מפרוטונים מעל 200 MeV`, `חצי וחצי בדיוק`],
+        answer: 1,
+        steps: [
+          { hint: `איפה Pb נפתח בפועל, ואיפה חתך הפעולה שלו לייצור נייטרונים גדול?`,
+            work: `Pb נפתח בפועל רק מעל כ-10 MeV, וחתך הפעולה שלו לייצור נייטרונים גדל מאוד עם האנרגיה. לכן רוב הנייטרונים של Pb באים מפרוטונים מעל 20 MeV.` },
+          { hint: `ומה Geant4 משתמש בו שם?`,
+            work: `מעל 20 MeV חתך הפעולה בא מ-G4PARTICLEXS. ל-Pb הפרויקט מצא שם התאמה טובה, אבל זו בדיקה נפרדת. התשובה: מפרוטונים מעל 20 MeV, עם חתך פעולה מ-G4PARTICLEXS.` },
+        ],
+      },
+      {
+        type: 'num',
+        q: `<span class="chip">חזרה מפרק 1</span> ב-Be יש \\(1.235\\times10^{23}\\) אטומים ב-cm³. מה המרחק החופשי הממוצע לחתך פעולה של 0.25 b, בסנטימטרים?`,
+        answer: 32.4, unit: 'cm',
+        steps: [
+          { hint: `מה \\(n\\sigma\\)?`,
+            work: `\\(1.235\\times10^{23}\\cdot 0.25\\times10^{-24} = 0.0309\\ \\text{cm}^{-1}\\).` },
+          { hint: `ומה \\(\\lambda\\)?`,
+            work: `\\(\\lambda = 1/(n\\sigma) = 1/0.0309 = 32.4\\) cm. התשובה: 32.4 cm.` },
+        ],
+      },
+      {
+        type: 'mc',
+        q: `<span class="chip">חזרה מפרק 2</span> פרוטון יצר בתגובה נייטרון וגמא. מה Geant4 יעביר מיד אחרי שהמסלול של הפרוטון נגמר?`,
+        options: [`את הפרוטון שוב, מההתחלה`, `את המשני האחרון שנכנס למחסנית`, `את האירוע הבא`, `את כל המשניים במקביל`],
+        answer: 1,
+        steps: [
+          { hint: `איפה מחכים המשניים בזמן שההורה עדיין מועבר?`,
+            work: `במחסנית (stack): כל משני נדחף אליה כשהוא נוצר, וההורה ממשיך עד הסוף.` },
+          { hint: `ובאיזה סדר הם יוצאים ממנה?`,
+            work: `אחרון נכנס, ראשון יוצא (LIFO). התשובה: המשני האחרון שנכנס למחסנית, והאירוע נגמר רק כשהיא ריקה.` },
+        ],
+      },
+    ],
+  });
+
+  U.initChapter({ id: CH });
+})();
+</script>
+</body>
+</html>

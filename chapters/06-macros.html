@@ -1,0 +1,948 @@
+<!doctype html>
+<html lang="he" dir="rtl" data-course="geant4">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>פרק 6: מאקרו ושורת הפקודה | Geant4 צעד אחר צעד</title>
+<meta name="description" content="איך שולטים בריצה של Geant4 בלי לקמפל: עץ הפקודות, מצבי האפליקציה, המבנה של מאקרו, משתנים ולולאות, שורת הפקודה של ldns, ואיך קוראים את הודעות השגיאה. פרק אינטראקטיבי עם המאקרו האמיתי של ממיר ה-Be.">
+<script>try{var t=localStorage.getItem('phy-theme');document.documentElement.setAttribute('data-theme',t||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'))}catch(e){document.documentElement.setAttribute('data-theme','light')}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&family=Rubik:wght@500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css">
+<link rel="stylesheet" href="../css/style.css">
+<style>
+  /* Chapter 6 only */
+  .quest-list { margin: 10px 0 0; padding-inline-start: 22px; }
+  .quest-list li { margin-bottom: 6px; }
+  .mono, .mac-lines, .mac-term, .mac-edit, .mac-files, .tree-list, .tree-crumb, .tree-line, .path-tree, .tree-input { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  .mac { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 12px; min-width: 0; }
+  .mac > * { min-width: 0; }
+  figure.sim > .sim-controls { grid-template-columns: minmax(0, 1fr); }
+  .sim-controls > * { min-width: 0; }
+  .mac-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.85rem; }
+  .mac-label { color: var(--ink-soft); }
+  .mac-pill { direction: ltr; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-weight: 700; font-size: 0.82rem; padding: 2px 10px; border-radius: 99px; border: 1.5px solid var(--line-strong); background: var(--surface-2); }
+  .mac-pill.is-Idle, .mac-pill.is-EventProc, .mac-pill.is-GeomClosed, .mac-pill.is-Init { border-color: var(--accent); background: var(--accent-soft); }
+  .mac-cwd { color: var(--ink-soft); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.74rem; overflow-wrap: anywhere; }
+  .mac-lines { direction: ltr; text-align: left; font-size: 12.5px; line-height: 1.55; margin: 0; padding: 6px 8px 6px 34px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-s); overflow-x: auto; max-width: 100%; }
+  .mac-lines li { white-space: pre; padding: 0 4px; border-radius: 4px; }
+  .mac-lines li::marker { color: var(--ink-soft); font-size: 11px; }
+  .mac-lines li.is-now { background: var(--accent-soft); }
+  .mac-lines li.is-bad { background: var(--bad-soft); color: var(--bad); font-weight: 600; }
+  .mac-lines li.is-comment { color: var(--ink-soft); }
+  .mac-verdict { font-weight: 700; }
+  .mac-lines li.is-done .mac-verdict { color: var(--good); }
+  .mac-term { direction: ltr; text-align: left; font-size: 12px; line-height: 1.45; max-height: 290px; min-height: 56px; overflow: auto; padding: 8px 10px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-s); overscroll-behavior: contain; }
+  .mac-term > div { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 1.45em; padding-left: 3ch; text-indent: -3ch; }
+  .mac-term-short { max-height: 140px; }
+  .mac-term .t-cmd { color: var(--accent); font-weight: 600; }
+  .mac-term .t-err, .mac .t-err { color: var(--bad); font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .mac-term .t-note { white-space: normal; direction: rtl; text-align: right; font-family: var(--font-body); font-size: 0.84rem; color: var(--ink-soft); font-style: italic; padding: 0; text-indent: 0; }
+  .mac-files { direction: ltr; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; }
+  .mac-files-head { color: var(--ink-soft); }
+  .mac-files-list { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+  .mac-file { padding: 2px 8px; border-radius: 6px; background: var(--good-soft); color: var(--good); overflow-wrap: anywhere; }
+  .mac-file.is-none { background: transparent; color: var(--ink-soft); }
+  .mac-edit { width: 100%; box-sizing: border-box; direction: ltr; text-align: left; font-size: 12.5px; line-height: 1.5; padding: 8px 10px; border: 1.5px solid var(--line-strong); border-radius: var(--radius-s); background: var(--surface); color: var(--ink); white-space: pre; overflow-x: auto; resize: vertical; }
+  .mac-edit:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .mac-issues { margin: 0; padding-inline-start: 20px; font-size: 0.9rem; display: grid; gap: 4px; }
+  .mac-issues .is-error { color: var(--bad); }
+  .mac-issues .is-warn { color: var(--accent); }
+  .mac-issues .is-info, .mac-issues .is-ok { color: var(--ink-soft); }
+  .mac-try { display: grid; gap: 8px; }
+  .mac-try .choice-btn code { font-size: 0.78rem; background: none; border: 0; padding: 0; }
+  .mac-try-ok { color: var(--good); font-weight: 600; }
+  .mac-try-bad { color: var(--bad); font-weight: 600; }
+  /* command tree */
+  .tree-crumb button, .tree-up { font: inherit; font-size: 0.82rem; min-height: 40px; padding: 4px 12px; border-radius: 99px; border: 1.5px solid var(--line-strong); background: var(--surface-2); color: var(--ink); cursor: pointer; direction: ltr; }
+  .tree-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; direction: ltr; }
+  .tree-list button { width: 100%; min-height: 44px; display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; justify-content: space-between; text-align: left; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; font-size: 0.86rem; }
+  .tree-list .is-dir button { background: var(--surface-2); font-weight: 600; }
+  .tree-list .is-open button { border-color: var(--accent); background: var(--accent-soft); }
+  .tree-list .tree-he { font-family: var(--font-body); font-weight: 400; font-size: 0.8rem; color: var(--ink-soft); }
+  .mac-tree.is-locked .tree-list button, .mac-tree.is-locked .tree-up { cursor: default; }
+  .tree-card { border: 1.5px dashed var(--line-strong); border-radius: var(--radius-s); padding: 10px 12px; display: grid; gap: 6px; font-size: 0.92rem; }
+  .tree-card p { margin: 0; }
+  .tree-empty { color: var(--ink-soft); }
+  .tree-guide { direction: ltr; text-align: left; font-size: 0.8rem; color: var(--ink-soft); overflow-wrap: anywhere; }
+  .tree-params { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
+  .tree-params th, .tree-params td { padding: 4px 5px; border-bottom: 1px solid var(--line); text-align: start; vertical-align: baseline; }
+  .tree-params th { font-weight: 600; color: var(--ink-soft); }
+  .tree-params td[dir="ltr"] { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; overflow-wrap: anywhere; text-align: left; }
+  .tree-params td.tree-pname { overflow-wrap: normal; white-space: nowrap; }
+  .tree-params .tree-req { color: var(--bad); font-weight: 600; }
+  .tree-probe { display: grid; gap: 6px; }
+  .tree-line { direction: ltr; text-align: left; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-s); padding: 6px 10px; font-size: 12.5px; overflow-x: auto; white-space: pre; }
+  .tree-prompt { color: var(--ink-soft); }
+  .tree-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 0.9rem; }
+  .tree-steps .is-ok { color: var(--good); }
+  .tree-steps .is-bad { color: var(--bad); font-weight: 600; }
+  .tree-mark { display: inline-block; width: 1.4em; font-weight: 700; }
+  .tree-input { width: 100%; box-sizing: border-box; min-height: 44px; direction: ltr; font-size: 13px; padding: 6px 10px; border: 1.5px solid var(--line-strong); border-radius: var(--radius-s); background: var(--surface); color: var(--ink); }
+  .tree-input-label { font-weight: 500; font-size: 0.95rem; }
+  /* paths */
+  .path-tree { list-style: none; margin: 0; padding: 6px 0; direction: ltr; text-align: left; font-size: 12.5px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-s); overflow-x: auto; }
+  .path-node { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; padding-block: 2px; padding-inline-end: 8px; }
+  .path-node.is-dir .path-name { font-weight: 600; }
+  .path-node.is-cwd { background: var(--accent-soft); }
+  .path-node.is-hit .path-name { background: var(--good-soft); color: var(--good); font-weight: 700; border-radius: 4px; padding: 0 4px; }
+  .path-note { font-family: var(--font-body); font-size: 0.78rem; color: var(--ink-soft); }
+  .path-content { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; direction: ltr; }
+  .path-steps { margin: 0; padding-inline-start: 20px; display: grid; gap: 4px; font-size: 0.9rem; }
+  .path-steps code.path-full { display: block; width: fit-content; max-width: 100%; margin-top: 3px; overflow-wrap: anywhere; text-align: left; font-size: 0.78rem; }
+  /* game */
+  .game-lines li { padding: 0; }
+  .game-line { width: 100%; min-height: 44px; text-align: left; font: inherit; background: transparent; border: 0; color: inherit; cursor: pointer; padding: 2px 4px; white-space: pre; border-radius: 4px; }
+  .game-line:hover { background: var(--accent-soft); }
+  .game-fix { display: grid; gap: 6px; }
+  .game-fix-q { margin: 0; font-weight: 600; }
+  .game-fix-btn, .game-pool-btn { direction: ltr; text-align: left; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
+  .game-pool { display: flex; flex-wrap: wrap; gap: 6px; }
+  /* error catalogue and tables */
+  .err-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin-top: 8px; }
+  .err-item { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius-s); padding: 8px 10px; background: var(--surface); }
+  .err-item pre.code { margin: 0 0 6px; }
+  .err-item p { margin: 0; font-size: 0.93rem; }
+  .cmd-table { border-collapse: collapse; width: 100%; margin-top: 8px; font-size: 0.93rem; table-layout: fixed; }
+  .cmd-table th, .cmd-table td { padding: 6px 6px; border-bottom: 1px solid var(--line); text-align: start; vertical-align: top; overflow-wrap: anywhere; }
+  .cmd-table thead th { font-family: var(--font-head); font-weight: 600; font-size: 0.85rem; color: var(--ink-soft); }
+  .cmd-table td code { font-size: 0.8em; }
+  .cmd-table .c-narrow { width: 22%; }
+  .cmd-table td code { overflow-wrap: normal; word-break: normal; }
+</style>
+</head>
+<body>
+
+<header class="topbar" data-topbar></header>
+
+<main>
+
+<!-- 1. HOOK -->
+<section class="section wrap" data-section="hook" id="hook">
+  <span class="kicker">פרק 6: מאקרו ושורת הפקודה</span>
+  <h1 class="hero-title">מאקרו שנראה תקין</h1>
+  <p class="lead">את ldns לא מקמפלים מחדש בשביל ממיר אחר או ספקטרום אחר. כל ההחלטות של ריצה נמצאות בקובץ טקסט, מאקרו (macro), ש-Geant4 קורא שורה אחר שורה. בפרק הזה נלמד לבנות מאקרו, ובעיקר לקרוא את מה ש-Geant4 עונה כשמשהו בו לא בסדר.</p>
+  <p>הנה מאקרו קצר לממיר ה-Be של הדוגמה המלווה: שכבה, מרחק, אתחול, מקור, פלט וריצה. הכול נראה במקום. Geant4 מריץ אותו, עוצר באמצע ומדפיס <code dir="ltr">Illegal application state</code>.</p>
+  <div id="pc-hook">
+    <figure class="sim"><div id="t-hook"></div><div class="sim-controls" id="ctl-hook"></div></figure>
+  </div>
+  <p class="block-gap">זה הרעיון של כל הפרק: Geant4 בודק כל שורה לפני שהוא מעביר אותה לאפליקציה. הוא בודק שהפקודה קיימת, שהיא מותרת במצב הנוכחי, ושכל פרמטר מהסוג הנכון. שורה שנכשלת באחת הבדיקות עוצרת את המאקרו, והמסוף אומר בדיוק איזו בדיקה נכשלה.</p>
+  <p>וכדאי להסתכל גם על טבלת הגיאומטריה: <code dir="ltr">radius = 2.5 cm</code>, ברירת המחדל של ldns, ולא 22 mm. הרדיוס הגיע אחרי שהעולם כבר נבנה. בכל ריצה כדאי לקרוא את הטבלה הזאת לפני הכול.</p>
+</section>
+
+<!-- 2. CYCLE: the command tree -->
+<section class="section wrap" data-section="tree" id="tree">
+  <div class="section-head"><span class="section-num">2</span><h2>עץ הפקודות</h2></div>
+  <p>כל פקודה של Geant4 מתחילה בנתיב, כמו נתיב של קובץ: <code dir="ltr">/run/beamOn</code>, <code dir="ltr">/ldns/det/addLayer</code>. הנתיבים יוצרים עץ, ואת העץ מחזיק מנהל הממשק של Geant4, <code dir="ltr">G4UImanager</code>. הספריות <code dir="ltr">/run/</code>, <code dir="ltr">/control/</code>, <code dir="ltr">/random/</code>, <code dir="ltr">/analysis/</code>, <code dir="ltr">/process/</code>, <code dir="ltr">/material/</code> ו-<code dir="ltr">/vis/</code> שייכות ל-Geant4 עצמו, ו-<code dir="ltr">/ldns/</code> לאפליקציה שלנו.</p>
+  <p>אפליקציה מוסיפה פקודות דרך מחלקה שנקראת messenger (<code dir="ltr">G4UImessenger</code>). היא יוצרת את הפקודות (<code dir="ltr">G4UIcommand</code>), ולכל פקודה מגדירה פרמטרים: סוג, האם מותר להשמיט אותו, ערך ברירת מחדל, טווח או רשימת ערכים, ויחידה. ב-ldns, למשל, <code dir="ltr">DetectorMessenger</code> מגדיר את פקודות הממיר, <code dir="ltr">SourceMessenger</code> את המקור ו-<code dir="ltr">OutputMessenger</code> את הפלט.</p>
+  <div id="pc-tree">
+    <figure class="sim"><div id="t-tree"></div><div class="sim-controls" id="ctl-tree"></div></figure>
+  </div>
+  <p class="block-gap">בדיקת הפרמטרים קורית לפני שהאפליקציה רואה את השורה, לפי מה שה-messenger הצהיר. כך ldns מגדיר את <code dir="ltr">addLayer</code>, מתוך <code dir="ltr">src/DetectorMessenger.cc</code>. הארגומנט השלישי של כל <code dir="ltr">G4UIparameter</code> אומר אם מותר להשמיט אותו, ולעובי אסור:</p>
+  <pre class="code" dir="ltr">  fAddCmd = new G4UIcommand("/ldns/det/addLayer", this);
+  fAddCmd-&gt;SetGuidance("Append a layer downstream: material thickness unit");
+  fAddCmd-&gt;SetGuidance("material: LiF Li Be C Al Cu Ta W Pb Bi Au Th U PE LiD CD2 or any G4_ NIST name");
+  auto p1 = new G4UIparameter("material", 's', false);
+  auto p2 = new G4UIparameter("thickness", 'd', false);
+  p2-&gt;SetParameterRange("thickness&gt;=0.");
+  auto p3 = new G4UIparameter("unit", 's', true);
+  p3-&gt;SetDefaultValue("mm");
+  fAddCmd-&gt;SetParameter(p1);
+  fAddCmd-&gt;SetParameter(p2);
+  fAddCmd-&gt;SetParameter(p3);
+  fAddCmd-&gt;AvailableForStates(G4State_PreInit);</pre>
+  <p>שתי השורות של <code dir="ltr">SetGuidance</code> הן ההסבר שהממשק מציג. בחלון של ldns (פרק 7) אפשר לטייל בעץ הזה מהשורה שבתחתית: <code dir="ltr">ls /ldns/det/</code> מראה מה יש בספרייה, ו-<code dir="ltr">help /ldns/</code> מראה את כל הפקודות שלנו עם ההסברים. העץ שלמעלה עושה את אותו דבר כאן.</p>
+  <div data-callout="intuition">
+    <p>מנהל הממשק הוא כמו פקידה בדלפק שמקבלת טפסים. היא לא יודעת מה נעשה עם הטופס, אבל היא בודקת שהוא הטופס הנכון, שהגשנו אותו בשעות הקבלה, ושכל שדה חובה מולא. טופס חסר לא מגיע בכלל לפקיד שמטפל בו.</p>
+  </div>
+</section>
+
+<!-- 3. CYCLE: application states -->
+<section class="section wrap" data-section="states" id="states">
+  <div class="section-head"><span class="section-num">3</span><h2>מצבי האפליקציה</h2></div>
+  <p>Geant4 עובר בזמן הריצה בין כמה מצבים (application states). התוכנה מתחילה ב-PreInit: אפשר לבנות גיאומטריה ולבחור פיזיקה. <code dir="ltr">/run/initialize</code> עובר דרך Init אל Idle, ומעכשיו הגיאומטריה סגורה. <code dir="ltr">/run/beamOn</code> עובר ל-GeomClosed, וכל אירוע רץ במצב EventProc.</p>
+  <p>כל פקודה מצהירה באילו מצבים היא מתקבלת. פקודה שמגיעה במצב אחר נדחית עם <code dir="ltr">Illegal application state</code>, וזה מה שקרה בפתיחה. במאקרו למטה ממיר נבנה, מאותחל, רץ שלושה אירועים, ואז מגיעות שתי שורות נוספות.</p>
+  <div id="pc-states">
+    <figure class="sim"><canvas id="c-states"></canvas><div class="sim-controls" id="ctl-states"></div></figure>
+  </div>
+  <p class="block-gap">וכך ldns מגדיר את פקודות המקור שיש להן יחידה, מתוך <code dir="ltr">src/SourceMessenger.cc</code>: יחידת ברירת מחדל, ושני מצבים מותרים, PreInit ו-Idle. פקודות הממיר ב-<code dir="ltr">DetectorMessenger.cc</code> מצהירות רק על <code dir="ltr">G4State_PreInit</code>.</p>
+  <pre class="code" dir="ltr">G4UIcmdWithADoubleAndUnit* MakeDU(const char* path, G4UImessenger* m, const char* guidance,
+                                  const char* unitCategory, const char* defUnit)
+{
+  auto c = new G4UIcmdWithADoubleAndUnit(path, m);
+  c-&gt;SetGuidance(guidance);
+  c-&gt;SetParameterName("value", false);
+  c-&gt;SetUnitCategory(unitCategory);
+  c-&gt;SetDefaultUnit(defUnit);
+  c-&gt;AvailableForStates(G4State_PreInit, G4State_Idle);
+  c-&gt;SetToBeBroadcasted(false);
+  return c;
+}</pre>
+  <p>השורה <code dir="ltr">SetToBeBroadcasted(false)</code> אומרת שהפקודה נשארת אצל ה-master ולא נשלחת לכל הליך (thread): את המקור מכינים פעם אחת, לפני שההליכים מתחילים. בגלל המצבים, שינוי מקור בין ריצות באותו מאקרו עובד, ושינוי ממיר לא. על זה נחזור במלכודת 3.</p>
+</section>
+
+<!-- 4. CYCLE: anatomy of a run macro -->
+<section class="section wrap" data-section="anatomy" id="anatomy">
+  <div class="section-head"><span class="section-num">4</span><h2>אנטומיה של מאקרו</h2></div>
+  <p>מאקרו של ריצה בנוי תמיד באותו סדר, כי המצבים מכתיבים אותו: גיאומטריה, אתחול, מקור, פלט, ריצה. זה המאקרו שהריץ את ממיר ה-Be של הדוגמה המלווה, מתוך <code dir="ltr">output/E30J_M2p5_Be2.mac</code>. קודם הגיאומטריה והאתחול:</p>
+  <pre class="code" dir="ltr">/control/verbose 1
+/run/verbose 1
+/ldns/det/clearLayers
+/ldns/det/addLayer Be 2 mm
+/ldns/det/distance 45 mm
+/ldns/det/radius 22 mm
+/run/initialize</pre>
+  <p>ואחר כך המקור, הפלט והריצה. היחידה באה אחרי המספר, עם רווח: <code dir="ltr">1.85 MeV</code>, <code dir="ltr">20 deg</code>. שם הקובץ בא בלי סיומת.</p>
+  <pre class="code" dir="ltr">/ldns/src/mode spectrum
+/ldns/src/file data/E30J_M2_2.5_d10um_L0.012um_spectrum.txt
+/ldns/src/Emin 1.85 MeV
+/ldns/src/Emax 13.0 MeV
+/ldns/src/halfAngle 20 deg
+/ldns/src/sampling flat
+/ldns/src/print
+/ldns/out/level 2
+/analysis/setFileName output/E30J_M2p5_Be2
+/run/printProgress 500000
+/run/beamOn 3000000</pre>
+  <p>שורה שמתחילה ב-<code dir="ltr">#</code> היא הערה, והתבניות של הפרויקט מלאות בהן. <code dir="ltr">/control/verbose 1</code> מדפיס כל פקודה לפני שהיא רצה, ו-<code dir="ltr">/run/printProgress 500000</code> מבקש שורת התקדמות כל חצי מיליון אירועים. המסוף למטה מריץ את המאקרו הזה. השורות שהוא מדפיס הן השורות של הלוג האמיתי, <code dir="ltr">E30J_M2p5_Be2.log</code>, בקיצור.</p>
+  <figure class="sim block-gap"><div id="t-be2"></div><div class="sim-controls" id="ctl-be2"></div></figure>
+  <div data-callout="lab">
+    <p>מה לחפש בפלט של ריצת ה-Be, מלמעלה למטה:</p>
+    <table class="lab-table">
+      <tbody>
+        <tr><th>טבלת הגיאומטריה</th><td class="v">Be, t = 2 mm, z = [45, 47] mm</td></tr>
+        <tr><th>פרוטונים לירייה בקונוס</th><td class="v">4.416e+11</td></tr>
+        <tr><th>אנרגיה ממוצעת של הפרוטונים</th><td class="v">3.93697 MeV</td></tr>
+        <tr><th>אירועים</th><td class="v">3000000</td></tr>
+        <tr><th>זמן אמיתי</th><td class="v">Real = 17.56 s</td></tr>
+        <tr><th>נייטרונים יוצאים לפרוטון</th><td class="v">4.470e-04 ± 9.048e-06</td></tr>
+        <tr><th>נייטרונים לירייה</th><td class="v">1.974e+08 ± 3.995e+06</td></tr>
+      </tbody>
+    </table>
+    <p class="small muted">כל המספרים מהלוג. בטקסט של האתר הם מעוגלים: \(4.42\times10^{11}\) פרוטונים, 3.94 MeV, \(4.47\times10^{-4}\) ו-\(1.97\times10^{8}\).</p>
+  </div>
+  <p>מאקרו יכול גם לחזור על עצמו. <code dir="ltr">/control/alias NAME value</code> מגדיר משתנה, ו-<code dir="ltr">{NAME}</code> בשורות הבאות מוחלף בערך. <code dir="ltr">/control/foreach</code> מריץ מאקרו אחר פעם לכל ערך ברשימה, ו-<code dir="ltr">/control/loop</code> לכל ערך בטווח מספרי. גם ldns מגדיר משתנה אחד כשהוא עולה: <code dir="ltr">STACK</code>, שם הממיר מהדגל <code dir="ltr">-g</code>.</p>
+  <p>המדריך של הפרויקט, <code dir="ltr">GUIDE_HE.md</code>, מביא סריקת אנרגיות בתוך Geant4 בשני קבצים. זה הקובץ שחוזר:</p>
+  <pre class="code" dir="ltr"># ../macros/one_energy.mac
+/ldns/src/energy {E} MeV
+/analysis/setFileName output/mono_{E}MeV
+/run/beamOn 100000</pre>
+  <p>וזה הקובץ שמריצים, מתוך <code dir="ltr">build/</code>. במסוף שבכרטיס הוספנו בראש המאקרו <code dir="ltr">/control/verbose 2</code>, כדי שכל פקודה תודפס.</p>
+  <pre class="code" dir="ltr"># ../macros/scan_energy.mac
+/ldns/det/clearLayers
+/ldns/det/addLayer LiF 4 mm
+/run/initialize
+/ldns/src/mode mono
+/ldns/src/halfAngle 0 deg
+/ldns/out/level 0
+/control/foreach ../macros/one_energy.mac E "5 10 20 40"</pre>
+  <div id="pc-loop">
+    <figure class="sim"><div id="t-loop"></div><div class="sim-controls" id="ctl-loop"></div></figure>
+  </div>
+  <p class="block-gap">foreach לא אוסף ערכים לריצה אחת. הוא מריץ את הקובץ מההתחלה פעם לכל ערך, וכל <code dir="ltr">/run/beamOn</code> שבו היא ריצה (run) שלמה, עם המספר שלה: Run 0, Run 1 וכן הלאה. המשתנה בשם הקובץ הוא מה ששומר על הקבצים: בלעדיו, כל ריצה הייתה דורסת את הקודמת.</p>
+  <p>אותו דבר עם <code dir="ltr">/control/loop ../macros/one_energy.mac E 5 40 5</code>: ערכים מ-5 עד 40 בקפיצות של 5. בלולאה עם קפיצה של 0.5 חלק מהערכים יכניסו נקודה לשם הקובץ, ובסעיף 6 נראה מה זה עושה.</p>
+</section>
+
+<!-- 5. CYCLE: the ldns command line -->
+<section class="section wrap" data-section="cli" id="cli">
+  <div class="section-head"><span class="section-num">5</span><h2>שורת הפקודה של ldns</h2></div>
+  <p>את ldns מפעילים מהטרמינל, ושם בוחרים בין שני אופנים. בריצת אצווה (batch) Geant4 מריץ מאקרו ויוצא, בלי חלון: <code dir="ltr">./ldns -m file.mac</code>. באופן האינטראקטיבי נפתח חלון, ובשורת הפקודה שבתחתיתו מקלידים פקודות אחת אחת. אלה השורות שבראש <code dir="ltr">ldns.cc</code>:</p>
+  <pre class="code" dir="ltr">// usage:
+//   ./ldns                                  interactive GUI (macros/vis.mac), default stack LiF 5 | Pb 10
+//   ./ldns -g "Be:30,Pb:16"                 GUI with this stack (mm, upstream first)
+//   ./ldns -m macros/run_converter.mac      batch run
+//   ./ldns -g "Be:30,Pb:16" -m ../macros/snapshot.mac   PNG of geometry + tracks, no GUI
+//   ./ldns -u results/setups/Pb_centre/gui.mac   GUI that starts with YOUR macro instead of
+//                                           macros/vis.mac (geometry + /run/initialize + /vis/...)</pre>
+  <p>ומיד אחריהן, הדגלים שמשנים את הריצה עצמה:</p>
+  <pre class="code" dir="ltr">//   options:  -p &lt;physics list&gt;   (default QGSP_BIC_AllHP_EMZ)
+//             -t &lt;threads&gt;        (default: all cores)
+//             -s &lt;seed&gt;           (random seed, default 12345)
+//             -g &lt;stack&gt;          converter stack "Mat:mm,Mat:mm,..." applied before the macro
+//             -n fix|poisson|round  ParticleHP multiplicity (default fix = mean-preserving,
+//                                 see include/ParticleHPFix.hh; round = Geant4 11.2+ as is)
+//                                 (a macro that has its own /ldns/det/ lines overrides it)</pre>
+  <table class="cmd-table">
+    <thead><tr><th class="c-narrow">דגל</th><th>מה הוא עושה</th></tr></thead>
+    <tbody>
+      <tr><td><code dir="ltr">-m file</code></td><td>מריץ את המאקרו בלי חלון, ויוצא בסופו.</td></tr>
+      <tr><td><code dir="ltr">-u file</code></td><td>פותח חלון ומריץ קודם את המאקרו הזה, במקום <code dir="ltr">macros/vis.mac</code>.</td></tr>
+      <tr><td><code dir="ltr">-g "Be:2"</code></td><td>בונה את הממיר משורת הפקודה, לפני המאקרו. מאקרו עם שורות <code dir="ltr">/ldns/det/</code> משלו גובר עליו.</td></tr>
+      <tr><td><code dir="ltr">-t 10</code></td><td>מספר ההליכים. בלי הדגל: כל הליבות. ריצת ה-Be רצה על 10.</td></tr>
+      <tr><td><code dir="ltr">-s 12345</code></td><td>הזרע. אותו זרע נותן אותם מספרים, בכל מספר הליכים (פרק 1).</td></tr>
+      <tr><td><code dir="ltr">-p name</code></td><td>רשימת הפיזיקה. ברירת המחדל <code dir="ltr">QGSP_BIC_AllHP_EMZ</code> (פרק 4).</td></tr>
+      <tr><td><code dir="ltr">-n fix</code></td><td>איך ParticleHP מגריל ריבוי של תוצרים: <code dir="ltr">fix</code>, <code dir="ltr">round</code> או <code dir="ltr">poisson</code> (פרק 4).</td></tr>
+    </tbody>
+  </table>
+  <p class="block-gap">כל נתיב יחסי, זה שאחרי <code dir="ltr">-m</code> וזה שבתוך מאקרו, מתחיל מאיפשהו. בפרויקט מריצים מ-<code dir="ltr">build/</code>, ו-cmake מעתיק אליה את <code dir="ltr">macros/</code> ואת <code dir="ltr">data/</code> בזמן הבנייה. אז יש שני עותקים של כל קובץ, וחשוב לדעת איזה מהם נפתח.</p>
+  <div id="pc-paths">
+    <figure class="sim"><div id="t-paths"></div><div class="sim-controls" id="ctl-paths"></div></figure>
+  </div>
+  <p class="block-gap">נתיב יחסי הוא תמיד יחסי לתיקיית העבודה (working directory) של התהליך, התיקייה שממנה הפעלנו את התוכנה. לא לתיקייה של המאקרו ולא לתיקייה של התוכנה. מכאן ההודעה <code dir="ltr">Cannot open spectrum file</code>, כשמריצים מתיקייה אחרת מזו שהמאקרו הניח.</p>
+  <p>כשיש הרבה ריצות, נוח לתת לסקריפט של shell לבנות את המאקרו ולהפעיל את ldns. כך עובד <code dir="ltr">run_spectra.sh</code> בריצות של 30 J: לכל ממיר הוא מייצר קובץ <code dir="ltr">.mac</code> ב-<code dir="ltr">output/</code>, מריץ אותו עם <code dir="ltr">-m</code> ושומר את הלוג. זה הלב שלו, והמאקרו של ריצת ה-Be שראינו בסעיף 4 יצא בדיוק ממנו:</p>
+  <pre class="code" dir="ltr">    {
+        echo "/control/verbose 1"
+        echo "/run/verbose 1"
+        echo "/ldns/det/clearLayers"
+        for item in $(echo "$stack" | tr ',' ' '); do
+            echo "/ldns/det/addLayer ${item%%:*} ${item##*:} mm"
+        done
+        echo "/ldns/det/distance 45 mm"
+        echo "/ldns/det/radius 22 mm"
+        echo "/run/initialize"</pre>
+  <p>ובסוף הפונקציה, הרצה אחת של ldns לכל ממיר, עם הפלט לקובץ לוג. הסקריפט עצמו עובר קודם לתיקייה שבה הוא נמצא, כך שהנתיב <code dir="ltr">data/...</code> במאקרו תמיד נכון:</p>
+  <pre class="code" dir="ltr">    } &gt; "$mac"
+    echo "=== $name  ($ev protons, cut-off $emax MeV)"
+    "$EXE" -m "$mac" &gt; "output/$name.log" 2&gt;&amp;1</pre>
+</section>
+
+<!-- 6. CYCLE: the error catalogue -->
+<section class="section wrap" data-section="errors" id="errors">
+  <div class="section-head"><span class="section-num">6</span><h2>קטלוג השגיאות</h2></div>
+  <p>Geant4 עונה על שורה שבורה בכמה צורות, וקל לפספס אותן בתוך מסוף מלא בפלט. יש שורה שמתחילה ב-<code dir="ltr">*****</code> ועוצרת את המאקרו, יש בלוק של <code dir="ltr">G4Exception</code> שעוצר את התוכנה כולה, ויש אזהרה שקטה שאחריה הכול ממשיך כרגיל. המקרה האחרון הוא המסוכן.</p>
+  <p>בכרטיס הבא המאקרו של ריצת ה-Be, עם שינוי אחד: בשם הקובץ כתבנו <code dir="ltr">M2.5</code>, כמו בשם הספקטרום, במקום <code dir="ltr">M2p5</code>.</p>
+  <div id="pc-dot">
+    <figure class="sim"><div id="t-dot"></div><div class="sim-controls" id="ctl-dot"></div></figure>
+  </div>
+  <p class="block-gap">G4AnalysisManager לא מתלונן בקול: הוא מדפיס אזהרה על סוג קובץ שהוא לא מכיר, והריצה ממשיכה עד הסוף, עם הסיכום ועם ה-JSON. מכאן הכלל של הפרויקט: בשמות של ריצות אין נקודה, <code dir="ltr">E30J_M2p5</code> ולא <code dir="ltr">E30J_M2.5</code>. הבורר שמתחת למסוף מריץ את שאר השגיאות של הקטלוג.</p>
+  <div class="err-list">
+    <div class="err-item">
+      <pre class="code" dir="ltr">***** Illegal application state &lt;/ldns/det/radius 22 mm&gt; *****</pre>
+      <p>פקודת גיאומטריה אחרי <code dir="ltr">/run/initialize</code>. מעבירים אותה למעלה.</p>
+    </div>
+    <div class="err-item">
+      <pre class="code" dir="ltr">3e6: integer expected.</pre>
+      <p>מספר אירועים בכתיב מדעי, או תו מיותר כמו ב-<code dir="ltr">/run/beamOn 300/</code>. כותבים את כל הספרות.</p>
+    </div>
+    <div class="err-item">
+      <pre class="code" dir="ltr">***** COMMAND NOT FOUND &lt;/ldns/src/Emni 1.85 MeV&gt; *****</pre>
+      <p>שגיאת כתיב, או בינארי ישן: הקוד עודכן בפקודה חדשה ולא נבנה מחדש. מתקנים, או מריצים <code dir="ltr">make</code>.</p>
+    </div>
+    <div class="err-item">
+      <pre class="code" dir="ltr">Cannot open spectrum file: data/hermione_E9.0J_tau27fs_R0um.txt</pre>
+      <p>הנתיב יחסי לתיקייה אחרת מזו שממנה הרצנו. מתוך <code dir="ltr">build/</code>, <code dir="ltr">data/</code> הוא העותק ו-<code dir="ltr">../data/</code> המקור.</p>
+    </div>
+    <div class="err-item">
+      <p><b>אין קובץ ROOT, יש <code dir="ltr">_summary.json</code>:</b> נקודה בשם הקובץ. <b>הריצה הקודמת נעלמה:</b> אותו <code dir="ltr">setFileName</code> בשתי ריצות, והשנייה דרסה את הראשונה. <b>המספרים לא השתנו אחרי עריכה:</b> הורץ העותק <code dir="ltr">macros/X.mac</code> שב-<code dir="ltr">build/</code> (מלכודת 4).</p>
+    </div>
+  </div>
+</section>
+
+<!-- 7. COMMAND CARD -->
+<section class="section wrap" data-section="formula" data-passive id="formula">
+  <div class="section-head"><span class="section-num">7</span><h2>כרטיס הפקודות</h2></div>
+  <p>כל מה שכאן כבר רץ במסוף. עכשיו רק מסדרים: השלד של כל מאקרו, המצבים, ופקודות הבקרה.</p>
+
+  <div class="formula-card">
+    <h3>השלד של מאקרו ריצה</h3>
+    <table class="cmd-table">
+      <thead><tr><th class="c-narrow">שלב</th><th>פקודות</th><th class="c-narrow">מצב</th></tr></thead>
+      <tbody>
+        <tr><td>1. ממיר</td><td><code dir="ltr">/ldns/det/clearLayers</code>, <code dir="ltr">addLayer Be 2 mm</code>, <code dir="ltr">distance</code>, <code dir="ltr">radius</code>, <code dir="ltr">/ldns/mod/</code>, <code dir="ltr">/ldns/refl/</code></td><td><code dir="ltr">PreInit</code> בלבד</td></tr>
+        <tr><td>2. אתחול</td><td><code dir="ltr">/run/initialize</code>: בונה גיאומטריה ופיזיקה</td><td><code dir="ltr">PreInit → Idle</code></td></tr>
+        <tr><td>3. מקור</td><td><code dir="ltr">/ldns/src/mode</code>, <code dir="ltr">file</code>, <code dir="ltr">Emin</code>, <code dir="ltr">Emax</code>, <code dir="ltr">halfAngle</code>, <code dir="ltr">sampling</code>, <code dir="ltr">print</code></td><td><code dir="ltr">PreInit</code> או <code dir="ltr">Idle</code></td></tr>
+        <tr><td>4. פלט</td><td><code dir="ltr">/ldns/out/level</code>, <code dir="ltr">/analysis/setFileName name</code>: בלי סיומת, בלי נקודה, שם חדש לכל ריצה</td><td><code dir="ltr">PreInit</code> או <code dir="ltr">Idle</code></td></tr>
+        <tr><td>5. ריצה</td><td><code dir="ltr">/run/printProgress N</code>, <code dir="ltr">/run/beamOn N</code>: N מספר שלם</td><td><code dir="ltr">Idle → GeomClosed → EventProc → Idle</code></td></tr>
+      </tbody>
+    </table>
+    <p class="not-say"><b>מה השלד לא אומר:</b> שמאקרו שרץ עד הסוף עשה את מה שרצינו. יחידה חסרה עוברת בשקט, וגם נקודה בשם הקובץ. לכן קוראים בכל ריצה את טבלת הגיאומטריה ואת סיכום המקור.</p>
+  </div>
+
+  <div class="formula-card">
+    <h3>מצבי האפליקציה</h3>
+    <table class="cmd-table">
+      <thead><tr><th class="c-narrow">מצב</th><th>מתי</th><th>מה ldns מקבל בו</th></tr></thead>
+      <tbody>
+        <tr><td><code dir="ltr">PreInit</code></td><td>מההפעלה עד <code dir="ltr">/run/initialize</code></td><td>הכול: ממיר, מאט, מקור, פלט</td></tr>
+        <tr><td><code dir="ltr">Init</code></td><td>בזמן <code dir="ltr">/run/initialize</code></td><td>מעבר בלבד</td></tr>
+        <tr><td><code dir="ltr">Idle</code></td><td>בין ריצות</td><td>מקור, פלט, <code dir="ltr">/run/beamOn</code>, <code dir="ltr">/ldns/xs/dump</code>. לא ממיר</td></tr>
+        <tr><td><code dir="ltr">GeomClosed</code></td><td>בתחילת ריצה ובסופה</td><td>מעבר בלבד</td></tr>
+        <tr><td><code dir="ltr">EventProc</code></td><td>בזמן כל אירוע</td><td>מעבר בלבד</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="formula-card">
+    <h3>פקודות הבקרה</h3>
+    <table class="cmd-table">
+      <thead><tr><th>פקודה</th><th>משמעות</th></tr></thead>
+      <tbody>
+        <tr><td><code dir="ltr">/control/verbose 2</code></td><td>מדפיס כל פקודה לפני שהיא רצה.</td></tr>
+        <tr><td><code dir="ltr">/control/alias NAME value</code></td><td>משתנה: <code dir="ltr">{NAME}</code> בשורות הבאות מוחלף בערך.</td></tr>
+        <tr><td><code dir="ltr">/control/execute f.mac</code></td><td>מריץ מאקרו מתוך מאקרו.</td></tr>
+        <tr><td><code dir="ltr">/control/foreach f.mac E "5 10 20"</code></td><td>מריץ את <code dir="ltr">f.mac</code> פעם לכל ערך, עם <code dir="ltr">{E}</code> בתוכו.</td></tr>
+        <tr><td><code dir="ltr">/control/loop f.mac E 5 40 5</code></td><td>אותו דבר, לכל ערך בטווח.</td></tr>
+        <tr><td><code dir="ltr">/random/setSeeds 1 2</code></td><td>זרעים מתוך המאקרו, במקום <code dir="ltr">-s</code>.</td></tr>
+        <tr><td><code dir="ltr">/tracking/verbose 1</code></td><td>מדפיס כל צעד של כל חלקיק. רק עם <code dir="ltr">/run/beamOn 1</code> ו-<code dir="ltr">-t 1</code>.</td></tr>
+      </tbody>
+    </table>
+    <p class="not-say"><b>מה הטבלה לא אומרת:</b> שלולאה יכולה לסרוק הכול. ב-ldns היא סורקת מקור ופלט. עובי של ממיר סורקים עם תהליך ldns נפרד לכל נקודה.</p>
+  </div>
+</section>
+
+<!-- 8. PLAYGROUND -->
+<section class="section wrap-wide" data-section="playground" id="playground">
+  <div class="section-head"><span class="section-num">8</span><h2>עורך המאקרו</h2></div>
+  <p>המאקרו האמיתי של ריצת ה-Be, לעריכה חופשית. הבודק שמתחת לעורך מתעדכן תוך כדי הקלדה, והכפתור מריץ את המאקרו במסוף. כמה דברים שכדאי לנסות:</p>
+  <ul class="quest-list">
+    <li>לשנות את <code dir="ltr">Be 2 mm</code> ל-<code dir="ltr">Be 0.2</code>, בלי יחידה. מה הבודק אומר, ומה טבלת הגיאומטריה מדפיסה?</li>
+    <li>להעביר את <code dir="ltr">/ldns/det/radius 22 mm</code> אל מתחת ל-<code dir="ltr">/run/initialize</code>.</li>
+    <li>לכתוב <code dir="ltr">3e6</code> במקום <code dir="ltr">3000000</code>, ואחר כך <code dir="ltr">3000000/</code>.</li>
+    <li>למחוק את היחידה בשורה של <code dir="ltr">/ldns/det/distance</code>. למה כאן Geant4 דוחה, וב-addLayer לא?</li>
+    <li>להוסיף בסוף עוד <code dir="ltr">/run/beamOn 3000000</code>, בלי שם קובץ חדש.</li>
+    <li>לכתוב <code dir="ltr">/ldns/src/Emin 1850</code> ולקרוא את ה-G4Exception.</li>
+  </ul>
+  <figure class="sim block-gap"><div id="t-lab"></div><div class="sim-controls" id="ctl-lab"></div></figure>
+</section>
+
+<!-- 9. GAME -->
+<section class="section wrap-wide" data-section="game" id="game">
+  <div class="section-head"><span class="section-num">9</span><h2>אתגר: לתקן את המאקרו</h2></div>
+  <p>שלושה מאקרו שבורים, כולם מבוססים על ריצת ה-Be. בשלב הראשון שורה אחת במקום הלא נכון, בשני שורה אחת שבורה, ובשלישי בונים מאקרו משמונה שורות מעורבבות.</p>
+  <p class="muted small">כל שלב שווה 3 נקודות בלי טעות, 2 אחרי טעות אחת, ואחר כך 1. הכוכבים נקבעים מסכום הנקודות, והשורות משתנות בכל סיבוב.</p>
+  <figure class="sim"><div id="t-game"></div><div class="sim-controls" id="ctl-game"></div></figure>
+</section>
+
+<!-- 10. TRAPS -->
+<section class="section wrap" data-section="traps" id="traps">
+  <div class="section-head"><span class="section-num">10</span><h2>מלכודות</h2></div>
+  <p>ארבע טעויות שכל מי שמריץ Geant4 עשה לפחות פעם אחת. שתיים מהן עוברות בלי שום הודעה.</p>
+  <div id="pc-trap1">
+    <figure class="sim"><div id="t-trap1"></div><div class="sim-controls" id="ctl-trap1"></div></figure>
+  </div>
+  <div id="pc-trap2">
+    <figure class="sim"><div id="t-trap2"></div><div class="sim-controls" id="ctl-trap2"></div></figure>
+  </div>
+  <p>ב-<code dir="ltr">run_spectra.sh</code> מספר האירועים מגיע מהמשתמש בכתיב מדעי, ושורה אחת ממירה אותו למספר שלם לפני שהוא נכנס למאקרו:</p>
+  <pre class="code" dir="ltr">    ev=$(awk "BEGIN{printf \"%d\", $ev}")     # /run/beamOn wants an integer (3e6 -&gt; 3000000)</pre>
+  <div id="pc-trap3">
+    <figure class="sim"><div id="t-trap3"></div><div class="sim-controls" id="ctl-trap3"></div></figure>
+  </div>
+  <div id="pc-trap4">
+    <figure class="sim"><div id="t-trap4"></div><div class="sim-controls" id="ctl-trap4"></div></figure>
+  </div>
+</section>
+
+<!-- 11. PROBLEMS -->
+<section class="section wrap" data-section="problems" id="problems">
+  <div class="section-head"><span class="section-num">11</span><h2>תרגילים</h2></div>
+  <p>חמש שאלות שעולות כשמתכננים ריצה. כדאי לנסות לבד, ולפתוח רמז רק כשנתקעים.</p>
+  <div id="problems-host"></div>
+</section>
+
+<!-- 12. QUIZ -->
+<section class="section wrap" data-section="quiz" id="quiz">
+  <div class="section-head"><span class="section-num">12</span><h2>בוחן</h2></div>
+  <p>חמש שאלות על הפרק ועוד שתיים לחזרה מפרקים 1 ו-2. הציון הטוב ביותר נשמר, ואפשר לנסות שוב כמה פעמים שרוצים.</p>
+  <div id="quiz-host" class="block-gap"></div>
+</section>
+
+<!-- 13. POCKET CARD -->
+<section class="section wrap" data-section="pocket" data-passive id="pocket">
+  <div class="section-head"><span class="section-num">13</span><h2>כרטיס כיס</h2></div>
+  <div class="pocket">
+    <h3>מאקרו על כף היד</h3>
+    <div class="pocket-grid">
+      <div class="pocket-item"><b>הסדר:</b> ממיר (<code dir="ltr">/ldns/det/</code>), <code dir="ltr">/run/initialize</code>, מקור (<code dir="ltr">/ldns/src/</code>), פלט (<code dir="ltr">/ldns/out/</code>, <code dir="ltr">/analysis/setFileName</code>), <code dir="ltr">/run/beamOn</code>.</div>
+      <div class="pocket-item"><b>מצבים:</b> PreInit → Init → Idle; כל ריצה Idle → GeomClosed → EventProc → Idle. ממיר רק ב-PreInit, מקור ופלט גם ב-Idle.</div>
+      <div class="pocket-item"><b>יחידות:</b> אחרי המספר, עם רווח: <code dir="ltr">2 mm</code>, <code dir="ltr">1.85 MeV</code>, <code dir="ltr">20 deg</code>. בלי יחידה: ברירת המחדל בשקט (addLayer: mm, מקור: MeV ו-deg), ו-distance או radius נדחות.</div>
+      <div class="pocket-item"><b>beamOn:</b> מספר שלם, <code dir="ltr">3000000</code>. לא <code dir="ltr">3e6</code> ולא <code dir="ltr">300/</code>: <code dir="ltr">integer expected</code>.</div>
+      <div class="pocket-item"><b>שם קובץ:</b> בלי סיומת ובלי נקודה, שם חדש לכל ריצה. יוצאים <code dir="ltr">name.root</code> ו-<code dir="ltr">name_summary.json</code>.</div>
+      <div class="pocket-item"><b>לולאות:</b> <code dir="ltr">/control/alias</code>, <code dir="ltr">{VAR}</code>, <code dir="ltr">/control/foreach</code>, <code dir="ltr">/control/loop</code>. סורקות מקור ופלט, לא ממיר.</div>
+      <div class="pocket-item"><b>שורת הפקודה:</b> <code dir="ltr">-m</code> בלי חלון, <code dir="ltr">-u</code> חלון עם מאקרו, <code dir="ltr">-g</code> ממיר, <code dir="ltr">-t</code> הליכים, <code dir="ltr">-s</code> זרע, <code dir="ltr">-p</code> פיזיקה, <code dir="ltr">-n</code> ריבוי.</div>
+      <div class="pocket-item"><b>נתיבים:</b> יחסיים לתיקייה שממנה מריצים. מ-<code dir="ltr">build/</code>: <code dir="ltr">../macros/X.mac</code> הוא המקור, <code dir="ltr">macros/X.mac</code> העותק.</div>
+    </div>
+    <div class="pocket-quote">"מאקרו שרץ עד הסוף עוד לא אומר שהוא עשה מה שרצינו: קוראים את הטבלה."</div>
+  </div>
+</section>
+
+</main>
+
+<div data-chapter-nav></div>
+<footer data-footer></footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/contrib/auto-render.min.js"></script>
+<script src="../js/core/fmt.js"></script>
+<script src="../js/core/vec.js"></script>
+<script src="../js/core/complex.js"></script>
+<script src="../js/core/fft.js"></script>
+<script src="../js/core/pulse.js"></script>
+<script src="../js/core/plot.js"></script>
+<script src="../js/core/progress.js"></script>
+<script src="../js/core/canvas.js"></script>
+<script src="../js/core/loop.js"></script>
+<script src="../js/core/coach.js"></script>
+<script src="../js/core/ui.js"></script>
+<script src="../js/sims/ch06/kit.js"></script>
+<script src="../js/sims/ch06/mac-terminal.js"></script>
+<script src="../js/sims/ch06/mac-tree.js"></script>
+<script src="../js/sims/ch06/mac-states.js"></script>
+<script src="../js/sims/ch06/mac-paths.js"></script>
+<script src="../js/sims/ch06/mac-game.js"></script>
+<script>
+(function () {
+  'use strict';
+  const CH = '06';
+  const U = PHY.ui, K = PHY.ch06;
+  const $ = (id) => document.getElementById(id);
+  const TAG = 'הניחוש שלנו';
+  const SPEC = K.SPEC;
+
+  /* ---------- 1. Hook: which line? ---------- */
+  const HOOK = ['/control/verbose 2', '/ldns/det/clearLayers', '/ldns/det/addLayer Be 2 mm', '/ldns/det/distance 45 mm', '/run/initialize',
+    '/ldns/src/mode spectrum', '/ldns/src/file ' + SPEC, '/ldns/src/Emin 1.85 MeV', '/ldns/det/radius 22 mm', '/ldns/out/level 2',
+    '/analysis/setFileName output/E30J_M2p5_Be2', '/run/beamOn 3000000'].join('\n');
+  const hook = PHY.sims.macTerminal($('t-hook'), $('ctl-hook'), { macro: HOOK, chapter: CH, section: 'hook' });
+  U.PredictCard($('pc-hook'), {
+    chapter: CH, id: 'hook', section: 'hook', tag: TAG,
+    question: `Geant4 עצר את המאקרו הזה עם <code dir="ltr">Illegal application state</code>. באיזו שורה?`,
+    options: [
+      { text: `שורה 5, <code dir="ltr">/run/initialize</code>: עוד לא הגדרנו מקור, אז אין מה לאתחל.`, why: `<code dir="ltr">/run/initialize</code> בונה את הגיאומטריה ואת הפיזיקה, לא את המקור. ב-ldns המקור מוגדר אחריו, כמו בתבניות של הפרויקט, ופקודות המקור מתקבלות גם אחרי האתחול.` },
+      { text: `שורה 8, <code dir="ltr">/ldns/src/Emin 1.85 MeV</code>: אחרי האתחול כבר מאוחר לשנות את המקור.`, why: `פקודות המקור של ldns מתקבלות גם לפני האתחול וגם אחריו. אפשר לשנות את Emin בין שתי ריצות באותו מאקרו.` },
+      { text: `שורה 9, <code dir="ltr">/ldns/det/radius 22 mm</code>.`, correct: true },
+    ],
+    onRun: () => hook.play(8),
+    steps: [
+      { hint: `מה <code dir="ltr">/run/initialize</code> עושה לגיאומטריה?`,
+        work: `הוא בונה את העולם, את השכבות ואת הפיזיקה, ומעביר את Geant4 מהמצב PreInit למצב Idle. מכאן הגיאומטריה קבועה.` },
+      { hint: `באילו מצבים מתקבלות פקודות <code dir="ltr">/ldns/det/</code>, ובאילו פקודות <code dir="ltr">/ldns/src/</code>?`,
+        work: `ב-ldns כל פקודות הממיר מוגדרות עם <code dir="ltr">AvailableForStates(G4State_PreInit)</code>: רק לפני האתחול. פקודות המקור מתקבלות גם ב-Idle.` },
+      { hint: `איזו שורה אחרי האתחול היא פקודת ממיר?`,
+        work: `שורה 9, <code dir="ltr">/ldns/det/radius 22 mm</code>. Geant4 מדפיס <code dir="ltr">Illegal application state</code> ועוצר את המאקרו. גם טבלת הגיאומטריה מעידה: <code dir="ltr">radius = 2.5 cm</code>, ברירת המחדל, כי הרדיוס הגיע מאוחר מדי. התשובה: שורה 9.` },
+    ],
+    explanation: `<p>אפשר להריץ שוב ולעקוב אחרי המצב שבראש המסוף: מתי הוא עובר מ-PreInit ל-Idle?</p>`,
+    sayRight: 'נכון. פקודת ממיר אחרי האתחול נדחית.',
+    sayWrong: 'גם אני חיפשתי בהתחלה במקור. הבעיה בממיר.',
+  });
+
+  /* ---------- 2. The command tree ---------- */
+  const tree = PHY.sims.macTree($('t-tree'), $('ctl-tree'), { probe: '/ldns/det/addLayer Be', probeState: 'PreInit', chapter: CH, section: 'tree' });
+  U.PredictCard($('pc-tree'), {
+    chapter: CH, id: 'tree', section: 'tree', tag: TAG,
+    question: `במאקרו, לפני האתחול, יש את השורה <code dir="ltr">/ldns/det/addLayer Be</code>: שכחנו את העובי. מה יקרה?`,
+    options: [
+      { text: `Geant4 יוסיף שכבת Be בעובי ברירת המחדל.`, why: `לחלק מהפרמטרים יש ברירת מחדל, ליחידה של addLayer למשל. לעובי אין: הוא מוגדר כפרמטר שאסור להשמיט.` },
+      { text: `ldns יוסיף שכבה בעובי 0, וידלג עליה עם הודעה.`, why: `ldns באמת מדלג על שכבה בעובי 0 ומדפיס <code dir="ltr">### Layer Be with zero thickness skipped</code>. אבל כאן השורה לא מגיעה אליו בכלל: מנהל הממשק עוצר אותה קודם.` },
+      { text: `Geant4 דוחה את השורה עוד לפני ש-ldns רואה אותה, והמאקרו נעצר.`, correct: true },
+    ],
+    onRun: () => tree.play(6),
+    steps: [
+      { hint: `מי מקבל את השורה ראשון: ה-messenger של ldns, או מנהל הממשק?`,
+        work: `מנהל הממשק. הוא מוצא את הפקודה בעץ, בודק שהמצב מותר, ובודק כל פרמטר לפי ההגדרה שלו. רק שורה שעברה את כל זה מגיעה ל-messenger של ldns.` },
+      { hint: `איך הפרמטר thickness מוגדר ב-<code dir="ltr">DetectorMessenger.cc</code>?`,
+        work: `<code dir="ltr">G4UIparameter("thickness", 'd', false)</code>: מספר, וה-<code dir="ltr">false</code> אומר שאסור להשמיט אותו. ליחידה, לעומת זאת, יש <code dir="ltr">SetDefaultValue("mm")</code>.` },
+      { hint: `מה קורה לשורה שחסר בה פרמטר חובה?`,
+        work: `Geant4 מדפיס שורת <code dir="ltr">Illegal parameter</code> עם השורה כולה, ועוצר את המאקרו. התשובה: השורה נדחית עוד לפני ש-ldns רואה אותה.` },
+    ],
+    explanation: `<p>העץ פתוח עכשיו לטיול. אפשר להקליד שורה אחרת ולבדוק אותה, למשל <code dir="ltr">/ldns/src/Emin 1.85</code> או <code dir="ltr">/ldns/det/distance 45</code>. למה האחת עוברת והשנייה לא?</p>`,
+    sayRight: 'נכון. פרמטר חובה שחסר עוצר את השורה בכניסה.',
+    sayWrong: 'גם אני הנחתי שיש ברירת מחדל לכל דבר. לעובי אין.',
+  });
+
+  /* ---------- 3. Application states ---------- */
+  const STATES_MACRO = ['/ldns/det/clearLayers', '/ldns/det/addLayer Be 2 mm', '/ldns/det/distance 45 mm', '/run/initialize', '/run/beamOn 3', '/ldns/src/Emin 3 MeV', '/ldns/det/radius 30 mm'].join('\n');
+  const states = PHY.sims.macStates($('c-states'), $('ctl-states'), { macro: STATES_MACRO, chapter: CH, section: 'states' });
+  U.PredictCard($('pc-states'), {
+    chapter: CH, id: 'states', section: 'states', tag: TAG,
+    question: `אחרי האתחול וריצה קצרה של שלושה אירועים, המאקרו מגיע לשתי שורות: <code dir="ltr">/ldns/src/Emin 3 MeV</code> ו-<code dir="ltr">/ldns/det/radius 30 mm</code>. מה Geant4 יקבל?`,
+    options: [
+      { text: `את שתיהן: רדיוס הוא רק מספר, לא גיאומטריה חדשה.`, why: `הרדיוס הוא מידה של גלילים שכבר נבנו. כדי לשנות אותו צריך לבנות את העולם מחדש, ולכן ldns מקבל את הפקודה רק ב-PreInit.` },
+      { text: `רק את <code dir="ltr">Emin</code>.`, correct: true },
+      { text: `אף אחת: אחרי <code dir="ltr">/run/initialize</code> המאקרו נעול.`, why: `Geant4 מקבל פקודות במצב Idle, בין ריצות. בגלל זה אפשר להריץ באותו מאקרו כמה ריצות, כל אחת עם מקור אחר.` },
+    ],
+    onRun: () => states.play(9),
+    steps: [
+      { hint: `באיזה מצב Geant4 נמצא כשהריצה הקצרה נגמרת?`,
+        work: `שוב ב-Idle. הריצה עברה מ-Idle ל-GeomClosed, כל אירוע רץ ב-EventProc, ובסוף הריצה Geant4 חזר ל-Idle.` },
+      { hint: `באילו מצבים מתקבלות פקודות <code dir="ltr">/ldns/src/</code>, ובאילו פקודות <code dir="ltr">/ldns/det/</code>?`,
+        work: `ב-<code dir="ltr">SourceMessenger.cc</code> כל פקודה מוגדרת עם <code dir="ltr">AvailableForStates(G4State_PreInit, G4State_Idle)</code>. ב-<code dir="ltr">DetectorMessenger.cc</code> רק <code dir="ltr">G4State_PreInit</code>.` },
+      { hint: `אז מה עובר?`,
+        work: `Emin עובר, ונכנס לתוקף בריצה הבאה. radius נדחה עם <code dir="ltr">Illegal application state</code>, והמאקרו נעצר. התשובה: רק Emin.` },
+    ],
+    explanation: `<p>מתחת לשרטוט נפתחו שני בוררים: שורה של ldns ומצב. איזו פקודה של ldns מתקבלת רק ב-Idle, ולמה דווקא היא?</p>`,
+    sayRight: 'נכון. מקור כן, ממיר לא.',
+    sayWrong: 'גם אני חשבתי שרדיוס הוא סתם מספר. הגלילים כבר בנויים.',
+  });
+
+  /* ---------- 4. Anatomy: the real macro, then foreach ---------- */
+  PHY.sims.macTerminal($('t-be2'), $('ctl-be2'), { macro: K.MACROS.be2, locked: false, chapter: CH, section: 'anatomy' });
+  const LOOP_FS = { '../macros/one_energy.mac': K.MACROS.oneEnergy };
+  const loopTerm = PHY.sims.macTerminal($('t-loop'), $('ctl-loop'), { macro: '/control/verbose 2\n' + K.MACROS.scanEnergy, cwd: 'build', fs: LOOP_FS, chapter: CH, section: 'anatomy' });
+  U.PredictCard($('pc-loop'), {
+    chapter: CH, id: 'loop', section: 'anatomy', tag: TAG,
+    question: `כמה ריצות, וכמה קובצי ROOT, ייצאו מ-<code dir="ltr">scan_energy.mac</code>?`,
+    options: [
+      { text: `ריצה אחת של \\(4\\times10^{5}\\) אירועים: foreach אוסף את כל הערכים לריצה אחת.`, why: `foreach מריץ את <code dir="ltr">one_energy.mac</code> פעם לכל ערך, ובכל פעם יש בו <code dir="ltr">/run/beamOn</code> משלו. ארבע פעמים beamOn הן ארבע ריצות.` },
+      { text: `ארבע ריצות, וקובץ ROOT אחד שנדרס שלוש פעמים.`, why: `זה היה קורה אם שם הקובץ היה קבוע. כאן יש בו <code dir="ltr">{E}</code>, ולכן כל ריצה כותבת לשם אחר.` },
+      { text: `ארבע ריצות וארבעה קובצי ROOT.`, correct: true },
+    ],
+    onRun: () => loopTerm.play(10),
+    steps: [
+      { hint: `מה foreach עושה עם הרשימה <code dir="ltr">"5 10 20 40"</code>?`,
+        work: `לכל ערך: נותן למשתנה E את הערך, ומריץ את <code dir="ltr">one_energy.mac</code> מההתחלה. ארבעה ערכים, ארבע הרצות של הקובץ.` },
+      { hint: `מה יש בכל הרצה של <code dir="ltr">one_energy.mac</code>?`,
+        work: `שלוש פקודות: אנרגיה <code dir="ltr">{E} MeV</code>, שם קובץ <code dir="ltr">output/mono_{E}MeV</code> ו-<code dir="ltr">/run/beamOn 100000</code>. כל הרצה היא ריצה שלמה של \\(10^{5}\\) אירועים.` },
+      { hint: `ומה שמות הקבצים?`,
+        work: `<code dir="ltr">mono_5MeV</code>, <code dir="ltr">mono_10MeV</code>, <code dir="ltr">mono_20MeV</code> ו-<code dir="ltr">mono_40MeV</code>, לכל אחד <code dir="ltr">.root</code> ו-<code dir="ltr">_summary.json</code>. התשובה: ארבע ריצות וארבעה קובצי ROOT.` },
+    ],
+    explanation: `<p>במסוף רואים כל פקודה אחרי ההחלפה, עם 5 במקום <code dir="ltr">{E}</code>. אילו ערכים ברשימה היו מכניסים נקודה לשם הקובץ?</p>`,
+    sayRight: 'נכון. ריצה לכל ערך, וקובץ לכל ריצה.',
+    sayWrong: 'גם אני חשבתי ש-foreach מאחד ריצות. הוא רק חוזר על הקובץ.',
+  });
+
+  /* ---------- 5. Relative paths ---------- */
+  const paths = PHY.sims.macPaths($('t-paths'), $('ctl-paths'), { mode: 'file', chapter: CH, section: 'cli' });
+  U.PredictCard($('pc-paths'), {
+    chapter: CH, id: 'paths', section: 'cli', tag: TAG,
+    question: `מתוך <code dir="ltr">build/</code> מריצים <code dir="ltr">./ldns -m ../macros/my_run.mac</code>. במאקרו יש את השורה <code dir="ltr">/ldns/src/file data/hermione_E9.0J_tau27fs_R0um.txt</code>. איזה קובץ ldns פותח?`,
+    options: [
+      { text: `<code dir="ltr">macros/data/hermione…</code>: הנתיב יחסי לתיקייה של המאקרו.`, why: `כך עובד include בהרבה שפות, ולכן זה נשמע טבעי. אבל ldns פותח את הקובץ עם נתיב יחסי, ומערכת ההפעלה משלימה אותו מתיקיית העבודה של התוכנה, לא מהמקום של המאקרו.` },
+      { text: `<code dir="ltr">build/data/hermione…</code>: העותק ש-cmake יצר.`, correct: true },
+      { text: `<code dir="ltr">data/hermione…</code> שבתיקיית הפרויקט, המקור.`, why: `את המקור פותחים עם <code dir="ltr">../data/hermione…</code> מתוך build/. בלי <code dir="ltr">../</code> הנתיב נשאר בתוך build/.` },
+    ],
+    onRun: () => paths.play(4),
+    steps: [
+      { hint: `מאיזו תיקייה התוכנה רצה?`,
+        work: `מ-<code dir="ltr">build/</code>: שם הקלדנו <code dir="ltr">./ldns</code>. זו תיקיית העבודה (working directory) של התהליך.` },
+      { hint: `לאן מצביע <code dir="ltr">../macros/my_run.mac</code> מתוך build/?`,
+        work: `<code dir="ltr">../</code> עולה תיקייה אחת, לתיקיית הפרויקט: <code dir="ltr">geant4_converter/macros/my_run.mac</code>, המקור שערכנו.` },
+      { hint: `ולאן מצביע <code dir="ltr">data/hermione…</code> שבתוך המאקרו?`,
+        work: `גם הוא יחסי לתיקיית העבודה, לא למאקרו: <code dir="ltr">geant4_converter/build/data/hermione…</code>, העותק ש-cmake מייצר. התשובה: build/data/hermione….` },
+    ],
+    explanation: `<p>אפשר להחליף את הנתיב שבתוך המאקרו ל-<code dir="ltr">../data/…</code>, ואת הפקודה ל-<code dir="ltr">-m macros/my_run.mac</code>. לאן כל אחד מצביע?</p>`,
+    sayRight: 'נכון. יחסי לתיקיית העבודה, תמיד.',
+    sayWrong: 'גם אני חיפשתי פעם את הקובץ ליד המאקרו. Geant4 מחפש ליד build/.',
+  });
+
+  /* ---------- 6. Errors: a dot in the file name ---------- */
+  const v = (i, text) => K.variant([{ at: i, text }]);
+  const ERR_VARIANTS = [
+    { value: 'dot', text: 'נקודה בשם', macro: v(15, '/analysis/setFileName output/E30J_M2.5_Be2') },
+    { value: 'e6', text: '<span dir="ltr">3e6</span>', macro: v(17, '/run/beamOn 3e6') },
+    { value: 'slash', text: '<span dir="ltr">300/</span>', macro: v(17, '/run/beamOn 300/') },
+    { value: 'typo', text: 'כתיב', macro: v(9, '/ldns/src/Emni 1.85 MeV') },
+    { value: 'path', text: 'נתיב', macro: v(8, '/ldns/src/file data/hermione_E9.0J_tau27fs_R0um.txt') },
+    { value: 'kev', text: 'Emin בלי יחידה', macro: v(9, '/ldns/src/Emin 1850') },
+    { value: 'twice', text: 'שם פעמיים', macro: K.MACROS.be2 + '\n/run/beamOn 3000000' },
+  ];
+  const dot = PHY.sims.macTerminal($('t-dot'), $('ctl-dot'), { macro: ERR_VARIANTS[0].macro, variants: ERR_VARIANTS, variantsLabel: 'שגיאה להריץ', chapter: CH, section: 'errors' });
+  U.PredictCard($('pc-dot'), {
+    chapter: CH, id: 'dot', section: 'errors', tag: TAG,
+    question: `הריצה מסתיימת, הסיכום מודפס עם כל המספרים, ובסוף מופיע <code dir="ltr">summary written to output/E30J_M2.5_Be2_summary.json</code>. אילו קבצים חדשים יש עכשיו ב-<code dir="ltr">output/</code>?`,
+    options: [
+      { text: `<code dir="ltr">E30J_M2.5_Be2.root</code> ו-<code dir="ltr">E30J_M2.5_Be2_summary.json</code>, כמו תמיד.`, why: `ה-JSON באמת נכתב: ldns כותב אותו בעצמו. את קובץ ה-ROOT כותב G4AnalysisManager, והוא קורא את מה שאחרי הנקודה כסוג הקובץ.` },
+      { text: `<code dir="ltr">E30J_M2.root</code> וה-JSON: Geant4 חותך את השם בנקודה.`, why: `Geant4 לא חותך את השם. הוא קורא את מה שאחרי הנקודה, <code dir="ltr">5_Be2</code>, כסוג הקובץ, לא מכיר סוג כזה, ולא כותב קובץ ROOT בכלל.` },
+      { text: `רק <code dir="ltr">E30J_M2.5_Be2_summary.json</code>.`, correct: true },
+    ],
+    onRun: () => dot.play(9),
+    steps: [
+      { hint: `מי כותב כל אחד משני הקבצים?`,
+        work: `את קובץ ה-ROOT כותב G4AnalysisManager של Geant4, לפי <code dir="ltr">/analysis/setFileName</code>. את <code dir="ltr">_summary.json</code> כותב ldns בעצמו, ב-<code dir="ltr">RunAction::WriteSummary</code>.` },
+      { hint: `איך G4AnalysisManager מחליט באיזה פורמט לכתוב?`,
+        work: `לפי הסיומת של השם, מה שאחרי הנקודה. בלי נקודה הוא משתמש בסוג ברירת המחדל, root, ש-ldns קבע. כאן הסיומת היא <code dir="ltr">5_Be2</code>, סוג שלא קיים, ולכן קובץ ROOT לא נכתב.` },
+      { hint: `ומה ldns עושה עם אותו שם?`,
+        work: `מוסיף לו <code dir="ltr">_summary.json</code> וכותב, בלי לבדוק את הסיומת. התשובה: רק <code dir="ltr">E30J_M2.5_Be2_summary.json</code>.` },
+    ],
+    explanation: `<p>הבורר שמתחת למסוף פתוח עכשיו, עם שש שגיאות נוספות מהקטלוג. איזו מהן עוצרת את המאקרו, ואיזו עוצרת את התוכנה כולה?</p>`,
+    sayRight: 'נכון. סיכום בלי ROOT, ובלי שום שגיאה אדומה.',
+    sayWrong: 'גם אני חיפשתי קובץ ROOT שלא היה. הנקודה אכלה אותו.',
+  });
+
+  /* ---------- 8. Playground ---------- */
+  PHY.sims.macTerminal($('t-lab'), $('ctl-lab'), { macro: K.MACROS.be2, mode: 'edit', locked: false, chapter: CH, section: 'playground' });
+
+  /* ---------- 9. Game ---------- */
+  PHY.sims.macGame($('t-game'), $('ctl-game'), { chapter: CH, section: 'game' });
+
+  /* ---------- 10. Traps ---------- */
+  const trapDone = {};
+  const trapFinished = (name) => {
+    trapDone[name] = true;
+    if (trapDone.a && trapDone.b && trapDone.c && trapDone.d) PHY.progress.markSection(CH, 'traps');
+  };
+
+  const T1 = (unit) => K.MACROS.be2Lines.slice(0, 7).map((l, i) => (i === 3 ? '/ldns/det/addLayer Be 0.2' + unit : l)).join('\n');
+  const t1 = PHY.sims.macTerminal($('t-trap1'), $('ctl-trap1'), {
+    macro: T1(''),
+    variants: [{ value: 'none', text: 'בלי יחידה', macro: T1('') }, { value: 'cm', text: 'עם <span dir="ltr">cm</span>', macro: T1(' cm') }],
+    variantsLabel: 'השורה של addLayer',
+  });
+  U.PredictCard($('pc-trap1'), {
+    chapter: CH, id: 'trap1', tag: 'מלכודת 1: יחידות הן רשות',
+    question: `רצינו ממיר Be בעובי 0.2 cm, ובמאקרו יצאה השורה <code dir="ltr">/ldns/det/addLayer Be 0.2</code>, בלי יחידה. מה Geant4 יבנה?`,
+    options: [
+      { text: `Be בעובי 0.2 cm, כמו שהתכוונו: עובי של ממיר מודדים בסנטימטרים.`, why: `Geant4 לא יודע למה התכוונו. לפרמטר unit של addLayer יש ברירת מחדל, mm, והיא נלקחת בלי שום הודעה.` },
+      { text: `Geant4 ידחה את השורה: חסרה יחידה.`, why: `זה קורה בפקודות שאין להן יחידת ברירת מחדל, כמו <code dir="ltr">/ldns/det/distance</code>. ל-addLayer יש: mm.` },
+      { text: `Be בעובי 0.2 mm, בלי שום הודעה.`, correct: true },
+    ],
+    onRun: () => t1.play(4),
+    steps: [
+      { hint: `איך מוגדר הפרמטר unit של addLayer?`,
+        work: `<code dir="ltr">G4UIparameter("unit", 's', true)</code> עם <code dir="ltr">SetDefaultValue("mm")</code>: מותר להשמיט אותו, וברירת המחדל mm.` },
+      { hint: `אז מה העובי שנבנה?`,
+        work: `0.2 mm, פי 10 פחות ממה שרצינו. אין שגיאה ואין אזהרה.` },
+      { hint: `איפה רואים את זה בכל זאת?`,
+        work: `בטבלת הגיאומטריה: <code dir="ltr">t = 200 um</code> ו-<code dir="ltr">z = [45, 45.2] mm</code>. Geant4 מדפיס כל אורך ביחידה שבה המספר הקטן ביותר שעדיין לפחות 1, ולכן 0.2 mm מופיע כ-200 um. התשובה: Be בעובי 0.2 mm, בשקט.` },
+    ],
+    onDone: () => trapFinished('a'),
+    sayRight: 'נכון. ברירת המחדל נלקחת בשקט.',
+    sayWrong: 'גם אני הנחתי פעם ש-Geant4 יודע למה התכוונתי. הוא לא.',
+  });
+
+  const t2 = PHY.sims.macTerminal($('t-trap2'), $('ctl-trap2'), {
+    macro: v(17, '/run/beamOn 3e6'),
+    variants: [
+      { value: 'e6', text: '<span dir="ltr">3e6</span>', macro: v(17, '/run/beamOn 3e6') },
+      { value: 'slash', text: '<span dir="ltr">300/</span>', macro: v(17, '/run/beamOn 300/') },
+      { value: 'ok', text: '<span dir="ltr">3000000</span>', macro: K.MACROS.be2 },
+    ],
+    variantsLabel: 'הפרמטר של beamOn',
+  });
+  U.PredictCard($('pc-trap2'), {
+    chapter: CH, id: 'trap2', tag: 'מלכודת 2: 3e6 הוא מספר שלם',
+    question: `בסוף המאקרו של ריצת ה-Be כתבנו <code dir="ltr">/run/beamOn 3e6</code>. מה יקרה?`,
+    options: [
+      { text: `ירוצו \\(3\\times10^{6}\\) אירועים: את 3e6 מבינה כל שפת תכנות.`, why: `3e6 הוא מספר ממשי בכתיב מדעי. הפרמטר של beamOn מוגדר כמספר שלם, והבדיקה של Geant4 מקבלת רק ספרות.` },
+      { text: `Geant4 יעגל ל-3, הספרה שלפני ה-e, ויריץ שלושה אירועים.`, why: `Geant4 לא מעגל ולא חותך: הבדיקה נכשלת על המחרוזת כולה, והשורה נדחית.` },
+      { text: `Geant4 עוצר עם <code dir="ltr">integer expected</code>.`, correct: true },
+    ],
+    onRun: () => t2.play(7),
+    steps: [
+      { hint: `מה הסוג של הפרמטר הראשון של <code dir="ltr">/run/beamOn</code>?`,
+        work: `מספר שלם. לפני שהריצה מתחילה, Geant4 בודק שהמחרוזת בנויה מספרות בלבד, עם סימן אופציונלי בהתחלה.` },
+      { hint: `האם 3e6 עובר את הבדיקה?`,
+        work: `לא: האות e אינה ספרה. Geant4 מדפיס <code dir="ltr">3e6: integer expected.</code> ושורת <code dir="ltr">Illegal parameter</code>, ועוצר את המאקרו. כל מה שלפני השורה כבר רץ: האתחול וסיכום המקור.` },
+      { hint: `ומה עם <code dir="ltr">/run/beamOn 300/</code>?`,
+        work: `אותה בדיקה, אותה תוצאה: <code dir="ltr">300/: integer expected.</code> כותבים את כל הספרות, 3000000. התשובה: Geant4 עוצר עם integer expected.` },
+    ],
+    onDone: () => trapFinished('b'),
+    sayRight: 'נכון. רק ספרות עוברות.',
+    sayWrong: 'גם אני כתבתי 3e6 בפעם הראשונה. Geant4 רוצה את כל האפסים.',
+  });
+
+  const SCAN = ['/control/verbose 2', '/ldns/det/clearLayers', '/ldns/det/addLayer Be 2 mm', '/ldns/det/distance 45 mm', '/ldns/det/radius 22 mm', '/run/initialize',
+    '/ldns/src/mode spectrum', '/ldns/src/file ' + SPEC, '/analysis/setFileName output/Be2', '/run/beamOn 100000',
+    '/ldns/det/clearLayers', '/ldns/det/addLayer Be 4 mm', '/analysis/setFileName output/Be4', '/run/beamOn 100000'].join('\n');
+  const t3 = PHY.sims.macTerminal($('t-trap3'), null, { macro: SCAN });
+  U.PredictCard($('pc-trap3'), {
+    chapter: CH, id: 'trap3', tag: 'מלכודת 3: אפשר לשנות ממיר אחרי האתחול',
+    question: `רוצים להשוות Be 2 mm ל-Be 4 mm במאקרו אחד: ריצה, ואז שכבות חדשות וריצה שנייה. מה ייצא?`,
+    options: [
+      { text: `שתי ריצות, <code dir="ltr">Be2.root</code> ו-<code dir="ltr">Be4.root</code>: Geant4 בונה את הממיר מחדש לפני הריצה השנייה.`, why: `Geant4 יודע לבנות מחדש רק כשהאפליקציה מאפשרת. ב-ldns פקודות הממיר מוגדרות ל-PreInit בלבד, ואחרי הריצה הראשונה Geant4 במצב Idle.` },
+      { text: `שתי ריצות, אבל השנייה שוב עם Be 2 mm: הגיאומטריה כבר נבנתה.`, why: `Geant4 לא מתעלם מהשורה בשקט. הוא דוחה אותה בקול ועוצר את כל המאקרו, ולכן ריצה שנייה בכלל לא מתחילה.` },
+      { text: `ריצה אחת. <code dir="ltr">/ldns/det/clearLayers</code> השנייה נדחית, והמאקרו נעצר.`, correct: true },
+    ],
+    onRun: () => t3.play(7),
+    steps: [
+      { hint: `באיזה מצב Geant4 נמצא אחרי הריצה הראשונה?`,
+        work: `Idle: הריצה נגמרה, והליבה מחכה לפקודה הבאה.` },
+      { hint: `האם <code dir="ltr">/ldns/det/clearLayers</code> מתקבלת ב-Idle?`,
+        work: `לא. היא מוגדרת עם <code dir="ltr">AvailableForStates(G4State_PreInit)</code>, ולכן Geant4 מדפיס <code dir="ltr">Illegal application state</code> ועוצר. נשאר קובץ אחד, <code dir="ltr">Be2.root</code>.` },
+      { hint: `אז איך סורקים עובי?`,
+        work: `תהליך ldns אחד לכל עובי. הסריקות של 30 J עשו בדיוק את זה: סקריפט מייצר מאקרו לכל נקודה ומפעיל את ldns מחדש בכל פעם. אנרגיה, Emin או שם קובץ אפשר לשנות בין ריצות באותו מאקרו. התשובה: ריצה אחת, ואז Illegal application state.` },
+    ],
+    onDone: () => trapFinished('c'),
+    sayRight: 'נכון. ממיר חדש, תהליך חדש.',
+    sayWrong: 'גם אני ניסיתי לסרוק עובי בלולאה. Geant4 עצר אותי.',
+  });
+
+  const t4 = PHY.sims.macPaths($('t-trap4'), $('ctl-trap4'), { mode: 'copy' });
+  U.PredictCard($('pc-trap4'), {
+    chapter: CH, id: 'trap4', tag: 'מלכודת 4: ערכנו את המאקרו, אז הריצה השתנתה',
+    question: `ב-VS Code שינינו את <code dir="ltr">macros/my_run.mac</code> של הפרויקט מ-Be 2 mm ל-Be 4 mm, ומ-<code dir="ltr">build/</code> הפעלנו <code dir="ltr">./ldns -m macros/my_run.mac</code>. מה תדפיס טבלת הגיאומטריה?`,
+    options: [
+      { text: `Be 4 mm: ערכנו את הקובץ.`, why: `ערכנו קובץ אחד והרצנו קובץ אחר עם אותו שם. <code dir="ltr">macros/my_run.mac</code> מתוך build/ הוא העותק ש-cmake יצר, והוא לא יודע על העריכה.` },
+      { text: `Geant4 יתלונן שיש שני קבצים באותו שם.`, why: `אין לו דרך לדעת על הקובץ השני: הוא מקבל נתיב אחד ופותח אותו.` },
+      { text: `Be 2 mm: רץ העותק הישן שב-build/.`, correct: true },
+    ],
+    onRun: () => t4.play(4),
+    steps: [
+      { hint: `לאן מצביע <code dir="ltr">macros/my_run.mac</code> מתוך build/?`,
+        work: `ל-<code dir="ltr">build/macros/my_run.mac</code>: נתיב יחסי לתיקיית העבודה.` },
+      { hint: `מתי הקובץ הזה נוצר?`,
+        work: `בזמן <code dir="ltr">cmake</code>, שמעתיק את <code dir="ltr">macros/</code> ואת <code dir="ltr">data/</code> אל build/. העותק מתעדכן רק ב-cmake הבא.` },
+      { hint: `ומה צריך להריץ?`,
+        work: `<code dir="ltr">./ldns -m ../macros/my_run.mac</code>, המקור. התשובה: Be 2 mm, מהעותק הישן.` },
+    ],
+    onDone: () => trapFinished('d'),
+    sayRight: 'נכון. העותק לא יודע על העריכה.',
+    sayWrong: 'גם אני ערכתי שעה קובץ שלא רץ. ../ עושה את ההבדל.',
+  });
+
+  /* ---------- 11. Problems ---------- */
+  const probs = $('problems-host');
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 1: כמה זמן תיקח הסריקה',
+    text: `ריצת ה-Be של \\(3\\times10^{6}\\) פרוטונים לקחה 17.6 s על 10 הליכים. מתכננים סריקה של 8 עוביים של Be, עם \\(2\\times10^{6}\\) פרוטונים בכל אחד. כמה זמן תיקח הסריקה כולה, אם הקצב לא משתנה ונזניח את זמן האתחול?`,
+    fields: [
+      { label: 'זמן', answer: 93.9, unit: 's' },
+    ],
+    steps: [
+      { hint: `מה הקצב של הריצה, באירועים לשנייה?`,
+        work: `\\(3\\times10^{6}/17.6\\ \\text{s} = 1.70\\times10^{5}\\) אירועים לשנייה, על כל 10 ההליכים ביחד.` },
+      { hint: `כמה אירועים יש בסריקה כולה?`,
+        work: `\\(8\\cdot 2\\times10^{6} = 1.6\\times10^{7}\\) אירועים, בשמונה תהליכי ldns נפרדים, אחד לכל עובי.` },
+      { hint: `ומה הזמן?`,
+        work: `\\(1.6\\times10^{7}/1.70\\times10^{5} = 93.9\\ \\text{s}\\), קצת יותר מדקה וחצי, ועוד האתחול של כל תהליך. התשובה: 93.9 s.` },
+    ],
+  });
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 2: לולאה על Emin',
+    text: `במאקרו של ריצת ה-Be, אחרי האתחול והמקור, מופיעה השורה <code dir="ltr">/control/loop ../macros/one_emin.mac EMIN 2 6 1</code>. בתוך <code dir="ltr">one_emin.mac</code> יש <code dir="ltr">/ldns/src/Emin {EMIN} MeV</code>, שם קובץ עם <code dir="ltr">{EMIN}</code> ו-<code dir="ltr">/run/beamOn 200000</code>. כמה ריצות יהיו, וכמה אירועים בסך הכול?`,
+    fields: [
+      { label: 'ריצות', answer: 5, unit: '' },
+      { label: 'אירועים', answer: 1, unit: '×10⁶' },
+    ],
+    steps: [
+      { hint: `אילו ערכים מקבל EMIN בלולאה מ-2 עד 6?`,
+        work: `2, 3, 4, 5 ו-6 MeV: הלולאה כוללת את הערך האחרון.` },
+      { hint: `מה קורה לכל ערך?`,
+        work: `<code dir="ltr">one_emin.mac</code> רץ מההתחלה, ו-<code dir="ltr">/run/beamOn</code> שבו היא ריצה שלמה. חמישה ערכים, חמש ריצות. אפשר לשנות Emin בין ריצות, כי פקודות המקור מתקבלות ב-Idle.` },
+      { hint: `וכמה אירועים בסך הכול?`,
+        work: `\\(5\\cdot 2\\times10^{5} = 10^{6}\\). התשובה: 5 ריצות ו-\\(1\\times10^{6}\\) אירועים.` },
+    ],
+  });
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 3: יחידה ששכחנו',
+    text: `במאקרו מופיעה השורה <code dir="ltr">/ldns/src/halfAngle 0.35</code>. מי שכתבה אותה התכוונה ל-0.35 rad. מה חצי הזווית ש-Geant4 משתמש בו, ומה חצי הזווית שהתכוונו אליו, שניהם במעלות?`,
+    fields: [
+      { label: 'מה ש-Geant4 לוקח', answer: 0.35, unit: 'deg' },
+      { label: 'מה שהתכוונו', answer: 20.05, unit: 'deg' },
+    ],
+    steps: [
+      { hint: `מה יחידת ברירת המחדל של <code dir="ltr">/ldns/src/halfAngle</code>?`,
+        work: `ב-<code dir="ltr">SourceMessenger.cc</code> הפקודה מוגדרת עם <code dir="ltr">SetDefaultUnit("deg")</code>. בלי יחידה, 0.35 נקרא כ-0.35 מעלות, בשקט.` },
+      { hint: `כמה מעלות ברדיאן?`,
+        work: `\\(1\\ \\text{rad} = 180°/\\pi = 57.30°\\), ולכן \\(0.35\\ \\text{rad} = 0.35\\cdot 57.30° = 20.05°\\). זה בערך הקונוס של 20° של ldns.` },
+      { hint: `ומה פי כמה קטנה הזווית שנורתה?`,
+        work: `\\(0.35°\\) במקום \\(20.05°\\): קונוס צר פי 57, כמעט קרן עיפרון. התיקון: <code dir="ltr">/ldns/src/halfAngle 0.35 rad</code>, או <code dir="ltr">20 deg</code>. התשובה: Geant4 לוקח 0.35 deg, והתכוונו ל-20.05 deg.` },
+    ],
+  });
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 4: נקודות בלולאה',
+    text: `סורקים Emin עם <code dir="ltr">/control/loop ../macros/one_emin.mac EMIN 1.5 3.5 0.5</code>, ובתוך המאקרו שם הקובץ הוא <code dir="ltr">output/Be2_Emin{EMIN}</code>. בכמה מהריצות ייכתב קובץ ROOT, ובכמה קובץ <code dir="ltr">_summary.json</code>?`,
+    fields: [
+      { label: 'ROOT', answer: 2, unit: '' },
+      { label: 'JSON', answer: 5, unit: '' },
+    ],
+    steps: [
+      { hint: `אילו ערכים מקבל EMIN, ואיך הם נכתבים?`,
+        work: `1.5, 2, 2.5, 3 ו-3.5. Geant4 כותב את הערך כמו ש-C++ מדפיס מספר: 2.0 הופך ל-2, ו-1.5 נשאר 1.5.` },
+      { hint: `באילו שמות יש נקודה?`,
+        work: `<code dir="ltr">Be2_Emin1.5</code>, <code dir="ltr">Be2_Emin2.5</code> ו-<code dir="ltr">Be2_Emin3.5</code>. בשלושתם Geant4 קורא את מה שאחרי הנקודה כסוג קובץ, ולא כותב ROOT. נשארים <code dir="ltr">Be2_Emin2</code> ו-<code dir="ltr">Be2_Emin3</code>.` },
+      { hint: `ומה עם ה-JSON?`,
+        work: `ldns כותב אותו בכל ריצה, בלי קשר לסיומת: חמישה קבצים. התשובה: 2 קובצי ROOT ו-5 קובצי JSON. הפתרון: לולאה ב-keV, <code dir="ltr">EKEV 1500 3500 500</code> עם <code dir="ltr">/ldns/src/Emin {EKEV} keV</code>, ובשמות אין נקודה.` },
+    ],
+  });
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 5: מה יש ב-output',
+    text: `<code dir="ltr">run_spectra.sh</code> מריץ את ממיר ה-Be 2 mm בשם <code dir="ltr">E30J_M2p5_Be2</code>: הוא מייצר את המאקרו ב-<code dir="ltr">output/</code>, מפעיל את ldns עם 10 הליכים ומפנה את הפלט ללוג. כמה קבצים שמתחילים ב-<code dir="ltr">E30J_M2p5_Be2</code> יהיו בתיקייה?`,
+    fields: [
+      { label: 'קבצים', answer: 4, unit: '' },
+    ],
+    steps: [
+      { hint: `מה הסקריפט עצמו כותב?`,
+        work: `שני קבצים: <code dir="ltr">output/E30J_M2p5_Be2.mac</code>, המאקרו, ו-<code dir="ltr">output/E30J_M2p5_Be2.log</code>, הפלט של ldns.` },
+      { hint: `מה ldns כותב בסוף הריצה?`,
+        work: `<code dir="ltr">E30J_M2p5_Be2_summary.json</code>, מ-RunAction, ו-<code dir="ltr">E30J_M2p5_Be2.root</code> מ-G4AnalysisManager. ldns קובע <code dir="ltr">SetNtupleMerging(true)</code>, כך שעשרת ההליכים כותבים לקובץ ROOT אחד.` },
+      { hint: `סך הכול?`,
+        work: `<code dir="ltr">.mac</code>, <code dir="ltr">.log</code>, <code dir="ltr">.root</code> ו-<code dir="ltr">_summary.json</code>. התשובה: 4 קבצים, ובתיקייה של 30 J הם באמת שם.` },
+    ],
+  });
+
+  /* ---------- 12. Quiz ---------- */
+  U.Quiz($('quiz-host'), {
+    chapter: CH, section: 'quiz',
+    questions: [
+      {
+        type: 'mc',
+        q: `איזו מהשורות האלה ldns ידחה אחרי <code dir="ltr">/run/initialize</code>?`,
+        options: [`<code dir="ltr">/ldns/src/halfAngle 20 deg</code>`, `<code dir="ltr">/ldns/out/level 1</code>`, `<code dir="ltr">/ldns/det/distance 45 mm</code>`, `<code dir="ltr">/analysis/setFileName output/run2</code>`],
+        answer: 2,
+        steps: [
+          { hint: `באיזה מצב Geant4 נמצא אחרי האתחול?`,
+            work: `Idle.` },
+          { hint: `לאיזו ספרייה של ldns אסור ב-Idle?`,
+            work: `<code dir="ltr">/ldns/det/</code>: הממיר, רק ב-PreInit. מקור, פלט ושם קובץ מותרים גם ב-Idle. התשובה: <code dir="ltr">/ldns/det/distance 45 mm</code>.` },
+        ],
+      },
+      {
+        type: 'num',
+        q: `<code dir="ltr">/control/foreach one.mac E "1 2 4 8 16"</code>, ובתוך <code dir="ltr">one.mac</code> יש <code dir="ltr">/run/beamOn 50000</code>. כמה אירועים ירוצו בסך הכול? (ביחידות של \\(10^{5}\\))`,
+        answer: 2.5, unit: '×10⁵',
+        steps: [
+          { hint: `כמה פעמים <code dir="ltr">one.mac</code> רץ?`,
+            work: `פעם לכל ערך ברשימה: 5 פעמים, וכל פעם ריצה של \\(5\\times10^{4}\\) אירועים.` },
+          { hint: `סך הכול?`,
+            work: `\\(5\\cdot 5\\times10^{4} = 2.5\\times10^{5}\\) אירועים.` },
+        ],
+      },
+      {
+        type: 'mc',
+        q: `מה ldns עושה עם <code dir="ltr">/ldns/src/Emin 2</code>, בלי יחידה?`,
+        options: [`דוחה את השורה: חסרה יחידה`, `לוקח 2 MeV`, `לוקח 2 keV`, `לוקח 2 eV`],
+        answer: 1,
+        steps: [
+          { hint: `האם לפקודה יש יחידת ברירת מחדל?`,
+            work: `כן: <code dir="ltr">SetDefaultUnit("MeV")</code> ב-<code dir="ltr">SourceMessenger.cc</code>.` },
+          { hint: `אז מה נלקח?`,
+            work: `2 MeV, בשקט. במקרה הזה זה גם מה שרצינו. התשובה: לוקח 2 MeV.` },
+        ],
+      },
+      {
+        type: 'mc',
+        q: `ריצה עם <code dir="ltr">/analysis/setFileName output/run.v2</code> הסתיימה. מה נכתב?`,
+        options: [`<code dir="ltr">run.v2.root</code> ו-<code dir="ltr">run.v2_summary.json</code>`, `<code dir="ltr">run.root</code> ו-<code dir="ltr">run_summary.json</code>`, `רק <code dir="ltr">run.v2_summary.json</code>`, `שום קובץ`],
+        answer: 2,
+        steps: [
+          { hint: `מה G4AnalysisManager עושה עם מה שאחרי הנקודה?`,
+            work: `קורא אותו כסוג הקובץ: v2. אין סוג כזה, ולכן קובץ ROOT לא נכתב.` },
+          { hint: `ומה ldns עושה עם השם?`,
+            work: `מוסיף <code dir="ltr">_summary.json</code> וכותב. התשובה: רק <code dir="ltr">run.v2_summary.json</code>.` },
+        ],
+      },
+      {
+        type: 'mc',
+        q: `מה ההבדל בין <code dir="ltr">./ldns -m X.mac</code> ל-<code dir="ltr">./ldns -u X.mac</code>?`,
+        options: [`<code dir="ltr">-u</code> מריץ עם יותר הליכים`, `<code dir="ltr">-m</code> מריץ את X.mac בלי חלון ויוצא; <code dir="ltr">-u</code> פותח חלון ומריץ את X.mac במקום vis.mac`, `אין הבדל, שני השמות לאותו דגל`, `<code dir="ltr">-m</code> מריץ רק את השורה הראשונה של X.mac`],
+        answer: 1,
+        steps: [
+          { hint: `מה <code dir="ltr">ldns.cc</code> עושה כשיש מאקרו מ-<code dir="ltr">-m</code>?`,
+            work: `לא יוצר ממשק גרפי: מריץ את המאקרו, ובסופו התוכנה מסתיימת. זו ריצת אצווה.` },
+          { hint: `ומה עם <code dir="ltr">-u</code>?`,
+            work: `פותח את החלון, מריץ קודם את X.mac במקום <code dir="ltr">macros/vis.mac</code>, ומחכה לפקודות. התשובה: <code dir="ltr">-m</code> בלי חלון ויוצא, <code dir="ltr">-u</code> חלון עם המאקרו שלנו.` },
+        ],
+      },
+      {
+        type: 'num',
+        q: `<span class="chip">חזרה מפרק 1</span> ריצה של \\(3\\times10^{6}\\) פרוטונים נתנה תפוקה עם שגיאה יחסית של 2.0%. כמה פרוטונים צריך כדי לרדת ל-1%? (ביחידות של \\(10^{7}\\))`,
+        answer: 1.2, unit: '×10⁷',
+        steps: [
+          { hint: `איך השגיאה היחסית תלויה במספר האירועים?`,
+            work: `כמו \\(1/\\sqrt N\\): כדי להקטין אותה פי 2 צריך פי 4 אירועים.` },
+          { hint: `אז כמה?`,
+            work: `\\(4\\cdot 3\\times10^{6} = 1.2\\times10^{7}\\) פרוטונים.` },
+        ],
+      },
+      {
+        type: 'mc',
+        q: `<span class="chip">חזרה מפרק 2</span> אותו מאקרו, עם <code dir="ltr">/run/beamOn 3000000</code>, רץ פעם עם <code dir="ltr">-t 4</code> ופעם עם <code dir="ltr">-t 8</code>. כמה אירועים רצים בפעם השנייה?`,
+        options: [`\\(3\\times10^{6}\\), בפחות זמן`, `\\(6\\times10^{6}\\): פי 2 הליכים`, `\\(2.4\\times10^{7}\\): \\(3\\times10^{6}\\) לכל הליך`, `\\(3.75\\times10^{5}\\) לכל הליך, ולכן פחות סטטיסטיקה`],
+        answer: 0,
+        steps: [
+          { hint: `מה קובע את מספר האירועים בריצה?`,
+            work: `הפרמטר של <code dir="ltr">/run/beamOn</code>, ולא מספר ההליכים.` },
+          { hint: `מה ההליכים עושים?`,
+            work: `מחלקים ביניהם את אותם אירועים, כל הליך אירועים שלמים. התשובה: \\(3\\times10^{6}\\) אירועים, בפחות זמן.` },
+        ],
+      },
+    ],
+  });
+
+  U.initChapter({ id: CH });
+})();
+</script>
+</body>
+</html>

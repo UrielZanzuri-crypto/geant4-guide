@@ -1,0 +1,737 @@
+<!doctype html>
+<html lang="he" dir="rtl" data-course="geant4">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>פרק 5: המקור | Geant4 צעד אחר צעד</title>
+<meta name="description" content="המקור של ldns: G4ParticleGun, הגרלת אנרגיה מטבלה בהיפוך הפונקציה המצטברת, כיוונים איזוטרופיים בקונוס, מספר הפרוטונים לירייה, דגימה אחידה עם משקלים, ובדיקת הקלט לפני שמאמינים לתוצאה.">
+<script>try{var t=localStorage.getItem('phy-theme');document.documentElement.setAttribute('data-theme',t||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'))}catch(e){document.documentElement.setAttribute('data-theme','light')}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&family=Rubik:wght@500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css">
+<link rel="stylesheet" href="../css/style.css">
+<style>
+  /* Chapter 5 only */
+  .quest-list { margin: 10px 0 0; padding-inline-start: 22px; }
+  .quest-list li { margin-bottom: 6px; }
+  .photo { margin: 16px 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-m); padding: 8px; }
+  .photo img { display: block; width: 100%; height: auto; border-radius: var(--radius-s); }
+  .photo figcaption { font-size: 0.9rem; color: var(--ink-soft); margin-top: 6px; line-height: 1.5; }
+  .sim-controls pre.code { margin: 12px 0 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<header class="topbar" data-topbar></header>
+
+<main>
+
+<!-- 1. HOOK -->
+<section class="section wrap" data-section="hook" id="hook">
+  <span class="kicker">פרק 5: המקור</span>
+  <h1 class="hero-title">הזנב שעושה את העבודה</h1>
+  <p class="lead">בפרק הזה נבנה את המקור של ldns: מאיפה כל פרוטון יוצא, באיזו אנרגיה ולאיזה כיוון, וכמה פרוטונים יש בירייה אחת של הלייזר. הספקטרום של הלייזר של 30 J יורד מהר עם האנרגיה, והנייטרונים באים דווקא מהזנב שלו.</p>
+  <p>אם יורים פרוטונים בדיוק לפי הספקטרום, החל מ-0.5 MeV, רק כ-5% מהם מעל 6 MeV. אבל בריצת ה-Be, 57% מהנייטרונים נוצרו מפרוטונים מעל 6 MeV. רוב זמן הריצה הולך על פרוטונים שלא עושים כלום.</p>
+  <div id="pc-hook">
+    <figure class="sim"><canvas id="c-hook"></canvas><div class="sim-controls" id="ctl-hook"></div></figure>
+  </div>
+  <p class="block-gap">זו דגימה עם משקלים (weighted sampling), וכך רצה ריצת ה-Be: <code dir="ltr">/ldns/src/sampling flat</code>, החל מ-1.85 MeV. בפרק 1 ראינו את התוצאה שלה, \(1.97\times10^{8} \pm 0.04\times10^{8}\) נייטרונים לירייה. בהנפשה השתמשנו בתפוקה סכמטית לכל אנרגיית פרוטון, מכוילת לתפוקה של הריצה, ולכן המספרים שלה קרובים לאמיתיים אבל לא זהים להם.</p>
+  <p>בסעיפים הבאים נבנה את המקור צעד אחר צעד: התותח, האנרגיה, הכיוון, המשקל, והבדיקה שהכול נכון.</p>
+</section>
+
+<!-- 2. CYCLE: the particle gun -->
+<section class="section wrap" data-section="gun" id="gun">
+  <div class="section-head"><span class="section-num">2</span><h2>תותח החלקיקים: פרוטון אחד בכל אירוע</h2></div>
+  <p>ב-Geant4, מחולל החלקיקים הראשוניים (primary generator) יוצר את החלקיק הראשון של כל אירוע. ldns משתמש ב-<code dir="ltr">G4ParticleGun</code>: בכל קריאה הוא יורה חלקיק עם האנרגיה, הכיוון, המקום והזמן שקבענו לו. החלופה הכללית היא <code dir="ltr">G4GeneralParticleSource</code> (GPS), שמגדירים בה התפלגויות בפקודות מאקרו. ldns מגריל את הכול בעצמו, בקוד.</p>
+  <p>אלה השורות ב-<code dir="ltr">src/PrimaryGeneratorAction.cc</code> שמכינות את הפרוטון כשהמקור הוא ספקטרום:</p>
+  <pre class="code" dir="ltr" data-no-iso>    fGun-&gt;SetParticleEnergy(src-&gt;SampleEnergy(w));
+    fGun-&gt;SetParticlePosition(src-&gt;Position());
+    fGun-&gt;SetParticleTime(0.);
+    // uniform in solid angle inside the cone: cos(theta) ~ U[cos(theta_max), 1]
+    const G4double cosMax = std::cos(src-&gt;HalfAngle());
+    cosT = 1. - G4UniformRand() * (1. - cosMax);
+    const G4double sinT = std::sqrt(std::max(0., 1. - cosT * cosT));
+    const G4double phi = twopi * G4UniformRand();
+    fGun-&gt;SetParticleMomentumDirection(G4ThreeVector(sinT * std::cos(phi), sinT * std::sin(phi), cosT));</pre>
+  <p>האנרגיה באה מ-<code dir="ltr">SampleEnergy</code>, שגם קובע את המשקל <code dir="ltr">w</code>. הכיוון מוגרל בשלוש שורות, והמקום הוא נקודת המקור. בהנפשה, מבט מהצד: המקור, קונוס של 20°, וממיר ה-Be.</p>
+  <div id="pc-gun">
+    <figure class="sim"><canvas id="c-gun"></canvas><div class="sim-controls" id="ctl-gun"></div></figure>
+  </div>
+  <p class="block-gap">אירוע ב-ldns הוא פרוטון אחד וכל מה שהוא יוצר. הנרמול לירייה נעשה רק בסוף: כל אירוע בריצת ה-Be מייצג \(1.47\times10^{5}\) פרוטונים של הירייה. בהמשך אותה פונקציה, הקוד קובע את המשקל של האירוע:</p>
+  <pre class="code" dir="ltr" data-no-iso>  fGun-&gt;GeneratePrimaryVertex(event);
+  // statistical weight: inherited by every secondary of this event
+  event-&gt;GetPrimaryVertex()-&gt;SetWeight(w);</pre>
+  <p>המשקל של הנקודה הראשונית עובר לפרוטון, וכל חלקיק משני יורש אותו מההורה. זה ה-<code dir="ltr">w</code> שבכל שורה בטבלאות של ldns.</p>
+</section>
+
+<!-- 3. CYCLE: sampling an energy from a table -->
+<section class="section wrap" data-section="sample" id="sample">
+  <div class="section-head"><span class="section-num">3</span><h2>להגריל אנרגיה מטבלה</h2></div>
+  <p>המקור קורא את הספקטרום מקובץ של HERMIONE: שתי עמודות, האנרגיה ב-MeV ו-\(f(E) = dN/dE\,d\Omega\), פרוטונים ל-MeV ולסטרדיאן בירייה. אלה השורות הראשונות של הקובץ של ריצת ה-Be:</p>
+  <pre class="code" dir="ltr" data-no-iso># HERMIONE point run: E_L = 30 J, tau = 300 fs, lambda = 1.056 um, R = 5.80 um, Al 10 um, L_preplasma = 0.012 um (fitted to Zimmer 13 MeV)
+# T_h = 0.782 MeV, Ep max = 13.00 MeV; spectrum cut at Ep max; analytic Eq. (12) with A from the model
+# protons above 0.5 MeV in the 20 deg half-angle cone: 1.278e+12, carrying 411.2 mJ
+# E(MeV);dNdE/MeV/sr
+0.500;3.852124e+12
+0.510;3.771487e+12</pre>
+  <p>הערכים בקובץ הולכים כמו \(e^{-\sqrt{2E/T}}/\sqrt{2ET}\), עם \(T = 0.782\) MeV מהשורה השנייה. בהנפשות של הפרק נשתמש בנוסחה הזאת, והיא נותנת את המספרים של הריצה.</p>
+  <p>איך מגרילים אנרגיה לפי טבלה כזאת? מחשבים את הפונקציה המצטברת (cumulative), \(F(E)\): החלק של הפרוטונים שמתחת ל-\(E\). מגרילים מספר אחיד \(u\) בין 0 ל-1, ומחפשים את ה-\(E\) שבו \(F(E) = u\).</p>
+  <div id="pc-cdf">
+    <figure class="sim"><canvas id="c-cdf"></canvas><div class="sim-controls" id="ctl-cdf"></div></figure>
+  </div>
+  <p class="block-gap">זו דגימה בהיפוך של הפונקציה המצטברת (inverse-CDF sampling). כך עובד המצב <code dir="ltr">analog</code> ב-<code dir="ltr">src/SourceSpectrum.cc</code>, עם \(F\) שמחושבת פעם אחת בתחילת הריצה:</p>
+  <pre class="code" dir="ltr" data-no-iso>  // analog: invert the piecewise-linear CDF exactly
+  G4double target = G4UniformRand() * fIntegral;
+  auto it = std::upper_bound(fCdf.begin(), fCdf.end(), target);</pre>
+  <p>השיטה מדויקת, אבל היא עושה בדיוק את מה שראינו בפתיחה: היא יורה איפה שהספקטרום גבוה, לא איפה שהנייטרונים נולדים.</p>
+  <div data-callout="intuition">
+    <p>הפונקציה המצטברת היא כמו סרגל שבו כל פרוטון תופס אותו אורך. אנרגיות צפופות תופסות הרבה סרגל, ולכן חץ אקראי פוגע בהן הרבה.</p>
+  </div>
+</section>
+
+<!-- 4. CYCLE: directions and protons per shot -->
+<section class="section wrap" data-section="cone" id="cone">
+  <div class="section-head"><span class="section-num">4</span><h2>כיוונים בקונוס, ופרוטונים לירייה</h2></div>
+  <p>HERMIONE נותן את הספקטרום לסטרדיאן, בהנחה שהפרוטונים יוצאים באופן איזוטרופי בתוך קונוס של 20°. איזוטרופי אומר: כל זווית מרחבית (solid angle) מקבלת אותו מספר פרוטונים. בקוד ראינו את הדרך: \(\cos\theta\) אחיד בין \(\cos\theta_{max}\) ל-1, ו-\(\phi\) אחיד.</p>
+  <p>בהנפשה שתי דרכים להגריל כיוון, כפי שהן נראות על הפאה הקדמית של הממיר, 45 mm מהמקור: מימין \(\cos\theta\) אחיד, ומשמאל \(\theta\) עצמה אחידה. העיגול המקווקו הוא שפת הקונוס, ברדיוס 16.4 mm.</p>
+  <div id="pc-cone">
+    <figure class="sim"><canvas id="c-cone"></canvas><div class="sim-controls" id="ctl-cone"></div></figure>
+  </div>
+  <p class="block-gap">\(\cos\theta\) אחיד הוא אחיד בזווית מרחבית, כי \(d\Omega = 2\pi\sin\theta\,d\theta = 2\pi\,|d(\cos\theta)|\). הזווית המרחבית של הקונוס כולו היא \(\Omega = 2\pi(1-\cos\theta_{max})\), ול-20° היא 0.379 sr. מכאן מספר הפרוטונים לירייה: \(N_{shot} = \Omega\int f\,dE\). זה מה ש-ldns מדפיס כשהמקור מוכן, בלוג של ריצת ה-Be:</p>
+  <pre class="code" dir="ltr" data-no-iso>================ LDNS proton source ================
+ proton spectrum 'data/E30J_M2_2.5_d10um_L0.012um_spectrum.txt' 1.85-13 MeV, half-angle 20 deg, sampling flat
+  table points used      : 1116
+  Integral f dE          : 1.16541e+12 protons/sr
+  protons per shot (cone): 4.416e+11
+  mean proton energy     : 3.93697 MeV
+  energy in cone / shot  : 0.278548 J
+====================================================</pre>
+  <p>\(\int f\,dE\) הוא \(1.165\times10^{12}\) פרוטונים לסטרדיאן, וכפול 0.379 sr יוצאים \(4.42\times10^{11}\) פרוטונים לירייה (תרגיל 2). האנרגיה הממוצעת של הפרוטונים שנורים היא 3.94 MeV.</p>
+</section>
+
+<!-- 5. CYCLE: weights -->
+<section class="section wrap" data-section="weights" id="weights">
+  <div class="section-head"><span class="section-num">5</span><h2>משקלים: יותר פרוטונים בזנב, אותה תשובה</h2></div>
+  <p>עכשיו נחזור לפתיחה, הפעם מבפנים. בדגימה <code dir="ltr">flat</code> כל אנרגיה בין \(E_{min}\) ל-\(E_{max}\) נורית באותה הסתברות, ולכל פרוטון יש משקל \(w = f(E)(E_{max}-E_{min})/\int f\,dE\). פרוטון של 2 MeV, מהאזור הצפוף, מקבל משקל גדול, ופרוטון של 12 MeV משקל קטן.</p>
+  <p>בהנפשה \(2\times10^{4}\) פרוטונים כאלה. למעלה ההיסטוגרמה של האנרגיות שנורו והמשקל \(w(E)\), ולמטה אותם פרוטונים, כל אחד עם המשקל שלו.</p>
+  <div id="pc-weights">
+    <figure class="sim"><canvas id="c-weights"></canvas><div class="sim-controls" id="ctl-weights"></div></figure>
+  </div>
+  <p class="block-gap">\(\langle w\rangle = 1\) אומר שכל ספירה נשארת לפרוטון מקור: סכום המשקלים חלקי מספר האירועים הוא בדיוק מה שהיה יוצא בדגימה לפי הספקטרום, בממוצע. רק הפיזור משתנה, והוא קטן כשיורים יותר איפה שהתוצאה נוצרת. זו דגימת חשיבות (importance sampling) בצורה הפשוטה שלה. כך זה נראה ב-<code dir="ltr">src/SourceSpectrum.cc</code>:</p>
+  <pre class="code" dir="ltr" data-no-iso>  if (fSampling == Sampling::kFlat) {
+    G4double e = fEmin + G4UniformRand() * (fEmax - fEmin);
+    weight = Interp(e) / fIntegral * (fEmax - fEmin) / MeV;
+    return e;
+  }</pre>
+  <p>ולמה המשקל הממוצע בטבלה <code dir="ltr">leak</code> של ריצת ה-Be הוא רק 0.219? כי הנייטרונים באים מהזנב, איפה ש-\(w\) קטן: 6126 שורות, וסכום משקלים של 1341. גם בצעצוע של ההנפשה יוצא ערך קרוב, כ-0.2.</p>
+  <div data-callout="intuition">
+    <p>זה כמו סקר שמראיין יותר אנשים בעיר קטנה, ונותן לכל אחד מהם משקל קטן יותר. התוצאה הארצית לא משתנה, אבל על העיר הקטנה יודעים הרבה יותר.</p>
+  </div>
+</section>
+
+<!-- 6. CYCLE: checking the input -->
+<section class="section wrap" data-section="check" id="check">
+  <div class="section-head"><span class="section-num">6</span><h2>לבדוק את הקלט לפני שמאמינים לתוצאה</h2></div>
+  <p>מקור עם משקלים הוא מקום טוב לטעויות: קובץ לא נכון, Emax לא נכון, משקל שלא מנורמל. לכן ldns שומר ברמת פלט 2 את הטבלה <code dir="ltr">primary</code>, עם האנרגיה, \(\cos\theta\) והמשקל של כל פרוטון שנורה, והסקריפט <code dir="ltr">check_inputs.py</code> משווה אותה לקובץ.</p>
+  <p>הבדיקה המרכזית היא ההיסטוגרמה עם המשקלים מול הספקטרום, ב-30 תאים, עם \(\chi^2\). בהנפשה \(3\times10^{5}\) פרוטונים, פי 10 פחות מבריצה האמיתית.</p>
+  <div id="pc-check">
+    <figure class="sim"><canvas id="c-check"></canvas><div class="sim-controls" id="ctl-check"></div></figure>
+  </div>
+  <p class="block-gap">אלה השורות שהבדיקה הדפיסה על ריצת ה-Be, מתוך <code dir="ltr">run_spectra.log</code>:</p>
+  <pre class="code" dir="ltr" data-no-iso>4. Protons actually fired (ntuple 'primary')
+  [PASS] 3000000 primaries recorded for 3000000 events
+  [PASS] mean weight 0.9997 +- 0.0008 (must be 1 within errors)
+  [PASS] all energies inside [1.85, 13] MeV: min 1.850, max 13.000
+  [PASS] weighted energy spectrum vs HERMIONE: chi2/ndf = 35.7/30 = 1.19
+  [PASS] all directions inside the 20 deg cone
+  [PASS] cos(theta) uniform in cone: chi2/ndf = 19.4/20
+
+5. Geometry
+  [PASS] cone radius at front face 16.4 mm vs converter radius 22 mm</pre>
+  <p>המשקל הממוצע יצא \(0.9997 \pm 0.0008\), כלומר 1 בתוך השגיאה. השורה האחרונה בודקת שהקונוס כולו נכנס לממיר: ברדיוס 16.4 mm הוא קטן מהדיסקה של 22 mm, ואף פרוטון לא מחטיא. לצד השורות הבדיקה שומרת תמונה:</p>
+  <figure class="photo">
+    <img src="../assets/ldns/input_check.png" loading="lazy" alt="שלושה גרפים מבדיקת הקלט של ריצת ה-Be: הספקטרום של הפרוטונים שנורו מול HERMIONE, היחס ביניהם סביב 1, והתפלגות קוסינוס הזווית, שטוחה בין 0.94 ל-1.">
+    <figcaption>בדיקת הקלט של ריצת ה-Be. משמאל הספקטרום שנורה, עם המשקלים, מול HERMIONE; באמצע היחס ביניהם, עם \(\chi^2/\text{ndf} = 1.19\); מימין \(\cos\theta\) של הכיוונים, אחיד בין 0.94 ל-1.</figcaption>
+  </figure>
+</section>
+
+<!-- 7. EARNED FORMULAS -->
+<section class="section wrap" data-section="formula" data-passive id="formula">
+  <div class="section-head"><span class="section-num">7</span><h2>הנוסחאות שהרווחנו</h2></div>
+  <p>כל מה שכאן כבר רץ על המסך. עכשיו רק נותנים לזה שמות, שורה לכל סמל.</p>
+
+  <div class="formula-card">
+    <h3>קונוס ופרוטונים לירייה</h3>
+    <div class="formula-main">\[\Omega = 2\pi(1-\cos\theta_{max})\] \[N_{shot} = \Omega\int_{E_{min}}^{E_{max}} f(E)\,dE\] \[\cos\theta = 1 - u\,(1-\cos\theta_{max})\]</div>
+    <table class="symbol-table">
+      <thead><tr><th>סמל</th><th>משמעות</th><th>יחידה</th></tr></thead>
+      <tbody>
+        <tr><td class="sym">\(\theta_{max}\)</td><td>חצי זווית הקונוס, הפקודה <code dir="ltr">halfAngle</code>.</td><td class="unit">deg</td></tr>
+        <tr><td class="sym">\(\Omega\)</td><td>הזווית המרחבית של הקונוס.</td><td class="unit">sr</td></tr>
+        <tr><td class="sym">\(f(E)\)</td><td>הספקטרום מהקובץ: פרוטונים ל-MeV ולסטרדיאן בירייה.</td><td class="unit">MeV⁻¹ sr⁻¹</td></tr>
+        <tr><td class="sym">\(E_{min},\ E_{max}\)</td><td>הטווח שנורה. \(E_{max}\) הוא ה-cut-off.</td><td class="unit">MeV</td></tr>
+        <tr><td class="sym">\(N_{shot}\)</td><td>פרוטונים בירייה, בתוך הקונוס ובטווח.</td><td class="unit"></td></tr>
+        <tr><td class="sym">\(u\)</td><td>מספר אקראי אחיד בין 0 ל-1.</td><td class="unit"></td></tr>
+      </tbody>
+    </table>
+    <p class="not-say"><b>מה הנוסחה לא אומרת:</b> שהפרוטונים באמת איזוטרופיים בקונוס. זו הנחה של HERMIONE, ובמציאות פרוטונים אנרגטיים יוצאים בזווית צרה יותר. כל עוד הממיר תופס את כל הקונוס, ההנחה לא משנה את המספר הכולל.</p>
+  </div>
+
+  <div class="formula-card">
+    <h3>דגימה ומשקלים</h3>
+    <div class="formula-main">\[F(E) = \frac{1}{\int f\,dE}\int_{E_{min}}^{E} f(E')\,dE'\] \[E = F^{-1}(u)\] \[w = \frac{f(E)\,(E_{max}-E_{min})}{\int f\,dE},\quad \langle w\rangle = 1\] \[\sigma_{\bar x} = \sqrt{\frac{\overline{x^2}-\bar x^{\,2}}{N}}\]</div>
+    <table class="symbol-table">
+      <thead><tr><th>סמל</th><th>משמעות</th><th>יחידה</th></tr></thead>
+      <tbody>
+        <tr><td class="sym">\(F(E)\)</td><td>הפונקציה המצטברת: החלק של הפרוטונים מתחת ל-\(E\).</td><td class="unit"></td></tr>
+        <tr><td class="sym">\(w\)</td><td>המשקל של פרוטון בדגימה <code dir="ltr">flat</code>. ב-<code dir="ltr">analog</code> הוא 1.</td><td class="unit"></td></tr>
+        <tr><td class="sym">\(x_i\)</td><td>סכום המשקלים של מה שנספר באירוע \(i\), למשל נייטרונים שיצאו.</td><td class="unit"></td></tr>
+        <tr><td class="sym">\(\bar x\)</td><td>הממוצע על \(N\) אירועים: התוצאה לפרוטון מקור.</td><td class="unit"></td></tr>
+        <tr><td class="sym">\(\sigma_{\bar x}\)</td><td>השגיאה שלו, מהפיזור בין האירועים.</td><td class="unit"></td></tr>
+      </tbody>
+    </table>
+    <p class="not-say"><b>מה הנוסחה לא אומרת:</b> שמשקלים תמיד מקטינים את השגיאה. הם מקטינים אותה רק כשהם שולחים יותר פרוטונים לאן שהתוצאה נוצרת. דגימה <code dir="ltr">flat</code> החל מ-0.5 MeV הייתה מבזבזת חלק גדול מהפרוטונים מתחת לכל סף.</p>
+  </div>
+
+  <div data-callout="lab">
+    <p>המקור של ריצת ה-Be:</p>
+    <table class="lab-table">
+      <tbody>
+        <tr><th>ספקטרום</th><td class="v">HERMIONE, 30 J, M² = 2.5</td></tr>
+        <tr><th>טווח</th><td class="v">1.85-13 MeV</td></tr>
+        <tr><th>קונוס</th><td class="v">20°, Ω = 0.379 sr</td></tr>
+        <tr><th>דגימה</th><td class="v">flat</td></tr>
+        <tr><th>∫f dE</th><td class="v">1.165×10¹² /sr</td></tr>
+        <tr><th>פרוטונים לירייה</th><td class="v">4.42×10¹¹</td></tr>
+        <tr><th>מעל 0.5 MeV</th><td class="v">1.28×10¹²</td></tr>
+        <tr><th>אנרגיה ממוצעת</th><td class="v">3.94 MeV</td></tr>
+        <tr><th>אירועים</th><td class="v">3×10⁶</td></tr>
+        <tr><th>משקל ממוצע</th><td class="v">0.9997 ± 0.0008</td></tr>
+      </tbody>
+    </table>
+    <p class="small muted">כל אירוע מייצג \(4.42\times10^{11}/3\times10^{6} = 1.47\times10^{5}\) פרוטונים של הירייה.</p>
+  </div>
+</section>
+
+<!-- 8. PLAYGROUND -->
+<section class="section wrap-wide" data-section="playground" id="playground">
+  <div class="section-head"><span class="section-num">8</span><h2>מעבדת המקור</h2></div>
+  <p>כל הכפתורים של המקור במקום אחד, עם שורות המאקרו שהם כותבים. השיפוע \(T\) משנה את צורת הספקטרום: מחוץ ל-0.78 MeV זה כבר ספקטרום של צעצוע, לא הקובץ של הריצה. כמה דברים שכדאי לבדוק:</p>
+  <ul class="quest-list">
+    <li>לעבור בין <code dir="ltr">analog</code> ל-<code dir="ltr">flat</code>: איפה נורים רוב הפרוטונים בכל אחד?</li>
+    <li>להוריד את Emin ל-0.5 MeV: פי כמה גדל מספר הפרוטונים לירייה, ואיזה חלק מהם מעל הסף של ⁹Be?</li>
+    <li>להקטין את הקונוס ל-10°: מה קורה למספר הפרוטונים לירייה, ומה לאנרגיה הממוצעת?</li>
+    <li>להקטין את \(T\): איך משתנה החלק שמעל הסף?</li>
+  </ul>
+  <figure class="sim block-gap"><canvas id="c-lab"></canvas><div class="sim-controls" id="ctl-lab"></div></figure>
+</section>
+
+<!-- 9. GAME -->
+<section class="section wrap-wide" data-section="game" id="game">
+  <div class="section-head"><span class="section-num">9</span><h2>אתגר: לכוון את המקור</h2></div>
+  <p>בכל שלב מקור מטרה, עם מספר פרוטונים לירייה ואנרגיה ממוצעת, ואנחנו מכוונים את הסליידרים עד ששניהם מתאימים: מספר הפרוטונים בטווח של 3%, והאנרגיה הממוצעת בטווח של 2%. בשלב הראשון רק הקונוס, בשני גם Emin, ובשלישי גם Emax.</p>
+  <p class="muted small">בדיקה ראשונה שמצליחה שווה 3 נקודות, שנייה 2, ואחר כך 1. הכוכבים נקבעים מסכום הנקודות, והמטרות משתנות בכל סיבוב.</p>
+  <figure class="sim"><canvas id="c-game"></canvas><div class="sim-controls" id="ctl-game"></div></figure>
+</section>
+
+<!-- 10. TRAPS -->
+<section class="section wrap" data-section="traps" id="traps">
+  <div class="section-head"><span class="section-num">10</span><h2>מלכודות</h2></div>
+  <p>ארבע טעויות על המקור. כל אחת מהן נותנת ריצה שנראית תקינה ותוצאה שלא מתאימה לירייה האמיתית.</p>
+  <div id="pc-trap1">
+    <figure class="sim"><canvas id="c-trap1"></canvas><div class="sim-controls" id="ctl-trap1"></div></figure>
+  </div>
+  <div id="pc-trap2">
+    <figure class="sim"><canvas id="c-trap2"></canvas><div class="sim-controls" id="ctl-trap2"></div></figure>
+  </div>
+  <div id="pc-trap3">
+    <figure class="sim"><canvas id="c-trap3"></canvas><div class="sim-controls" id="ctl-trap3"></div></figure>
+  </div>
+  <div id="pc-trap4">
+    <figure class="sim"><canvas id="c-trap4"></canvas><div class="sim-controls" id="ctl-trap4"></div></figure>
+  </div>
+</section>
+
+<!-- 11. PROBLEMS -->
+<section class="section wrap" data-section="problems" id="problems">
+  <div class="section-head"><span class="section-num">11</span><h2>תרגילים</h2></div>
+  <p>חמישה חישובים על המקור של ריצת ה-Be. כדאי לנסות לבד, ולפתוח רמז רק כשנתקעים.</p>
+  <div id="problems-host"></div>
+</section>
+
+<!-- 12. QUIZ -->
+<section class="section wrap" data-section="quiz" id="quiz">
+  <div class="section-head"><span class="section-num">12</span><h2>בוחן</h2></div>
+  <p>חמש שאלות על הפרק ושתיים לחזרה על פרקים 1 ו-2. הציון הטוב ביותר נשמר, ואפשר לנסות שוב כמה פעמים שרוצים.</p>
+  <div id="quiz-host" class="block-gap"></div>
+</section>
+
+<!-- 13. POCKET CARD -->
+<section class="section wrap" data-section="pocket" data-passive id="pocket">
+  <div class="section-head"><span class="section-num">13</span><h2>כרטיס כיס</h2></div>
+  <div class="pocket">
+    <h3>המקור על כף היד</h3>
+    <div class="pocket-grid">
+      <div class="pocket-item"><b>אירוע:</b> פרוטון אחד, <code dir="ltr">G4ParticleGun(1)</code>. הנרמול לירייה בסוף: כפול \(N_{shot}\), חלקי מספר האירועים.</div>
+      <div class="pocket-item"><b>קונוס:</b> \(\Omega = 2\pi(1-\cos\theta_{max})\), ל-20°: 0.379 sr. \(\cos\theta\) אחיד, \(\phi\) אחיד. \(\theta\) אחיד הוא טעות.</div>
+      <div class="pocket-item"><b>פרוטונים לירייה:</b> \(N_{shot} = \Omega\int f\,dE\). מ-1.85 MeV: \(4.42\times10^{11}\). מ-0.5 MeV: \(1.28\times10^{12}\).</div>
+      <div class="pocket-item"><b>אנרגיה:</b> <code dir="ltr">analog</code>: \(E = F^{-1}(u)\). <code dir="ltr">flat</code>: \(E\) אחיד ו-\(w = f(E)(E_{max}-E_{min})/\int f\), עם \(\langle w\rangle = 1\).</div>
+      <div class="pocket-item"><b>Emin:</b> מתחת ל-1.88 MeV, הסף של ⁷Li, אין נייטרונים. לכן הריצה מתחילה ב-1.85 MeV.</div>
+      <div class="pocket-item"><b>בדיקה:</b> <code dir="ltr">check_inputs.py</code>: \(\chi^2/\text{ndf} \approx 1\), משקל ממוצע 1 בתוך השגיאה, כל הכיוונים בקונוס, הקונוס בתוך הממיר.</div>
+      <div class="pocket-item"><b>מאקרו:</b> <code dir="ltr">/ldns/src/mode spectrum</code>, <code dir="ltr">/ldns/src/Emin 1.85 MeV</code>, <code dir="ltr">/ldns/src/Emax 13.0 MeV</code>, <code dir="ltr">/ldns/src/halfAngle 20 deg</code>, <code dir="ltr">/ldns/src/sampling flat</code>.</div>
+    </div>
+    <div class="pocket-quote">"המשקל משנה את הפיזור, לא את התשובה."</div>
+  </div>
+</section>
+
+</main>
+
+<div data-chapter-nav></div>
+<footer data-footer></footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/contrib/auto-render.min.js"></script>
+<script src="../js/core/fmt.js"></script>
+<script src="../js/core/vec.js"></script>
+<script src="../js/core/complex.js"></script>
+<script src="../js/core/fft.js"></script>
+<script src="../js/core/pulse.js"></script>
+<script src="../js/core/plot.js"></script>
+<script src="../js/core/progress.js"></script>
+<script src="../js/core/canvas.js"></script>
+<script src="../js/core/loop.js"></script>
+<script src="../js/core/coach.js"></script>
+<script src="../js/core/ui.js"></script>
+<script src="../js/sims/ch01/kit.js"></script>
+<script src="../js/sims/ch05/kit.js"></script>
+<script src="../js/sims/ch05/src-hook.js"></script>
+<script src="../js/sims/ch05/src-gun.js"></script>
+<script src="../js/sims/ch05/src-cdf.js"></script>
+<script src="../js/sims/ch05/src-cone.js"></script>
+<script src="../js/sims/ch05/src-weights.js"></script>
+<script src="../js/sims/ch05/src-check.js"></script>
+<script src="../js/sims/ch05/src-lab.js"></script>
+<script src="../js/sims/ch05/src-game.js"></script>
+<script src="../js/sims/ch05/src-traps.js"></script>
+<script>
+(function () {
+  'use strict';
+  const CH = '05';
+  const U = PHY.ui;
+  const $ = (id) => document.getElementById(id);
+  const TAG = 'הניחוש שלנו';
+
+  /* ---------- 1. Hook: statistics for the tail ---------- */
+  const hook = PHY.sims.srcHook($('c-hook'), $('ctl-hook'), { N: 3e6, seed: 2026, locked: true });
+  U.PredictCard($('pc-hook'), {
+    chapter: CH, id: 'hook', section: 'hook', tag: TAG,
+    question: `רוב הנייטרונים באים מהזנב, ורוב הפרוטונים לא. איך נותנים לזנב יותר סטטיסטיקה, בלי לשנות את התשובה?`,
+    options: [
+      { text: `יורים רק פרוטונים מעל 6 MeV: שם נולדים הנייטרונים.`, why: `כך הולכים לאיבוד הנייטרונים מפרוטונים שנורו מתחת ל-6 MeV. בהנפשה התוצאה יצאה עם שגיאה קטנה מאוד, ונמוכה בבירור מהערך הנכון: מדויקת ושגויה.` },
+      { text: `יורים יותר פרוטונים בזנב, ונותנים לכל פרוטון משקל שמתקן את ההטיה בדיוק.`, correct: true },
+      { text: `יורים לפי הספקטרום, ובסוף מכפילים את הנייטרונים שבאו מהזנב, כי הם חשובים יותר.`, why: `הכפלה כזאת סופרת את אותם נייטרונים כמה פעמים. התוצאה עולה, והשגיאה לא קטנה, כי לא נורו יותר פרוטונים בזנב.` },
+    ],
+    onRun: () => hook.play(4),
+    steps: [
+      { hint: `מה הבעיה בירי לפי הספקטרום?`,
+        work: `מ-0.5 MeV רק כ-5% מהפרוטונים מעל 6 MeV. בהנפשה, מ-\\(3\\times10^{6}\\) פרוטונים יצאו רק כמה מאות נייטרונים, והשגיאה על התוצאה כ-5%.` },
+      { hint: `מה קורה כשמוותרים על החלק הנמוך?`,
+        work: `ירי רק מעל 6 MeV נותן אלפי נייטרונים ושגיאה קטנה, אבל מפספס את כל הנייטרונים מפרוטונים שנורו מתחת ל-6 MeV. הנקודה יושבת מתחת לקו של הערך הנכון.` },
+      { hint: `איך אפשר לירות יותר בזנב, ועדיין לקבל את הממוצע הנכון?`,
+        work: `יורים אחיד באנרגיה בין 1.85 ל-13 MeV, ונותנים לכל פרוטון משקל \\(w = f(E)(E_{max}-E_{min})/\\int f\\,dE\\): פרוטון מהאזור הצפוף מקבל משקל גדול, ופרוטון מהזנב משקל קטן. בהנפשה התוצאה יושבת על הערך הנכון, \\(1.97\\times10^{8}\\) לירייה, עם שגיאה של כ-2%. התשובה: יותר פרוטונים בזנב, עם משקל.` },
+    ],
+    explanation: `<p>בגרף העליון, איזה חלק מהפרוטונים כל שיטה יורה מעל 6 MeV. בגרף התחתון, מה כל שיטה מעריכה לירייה.</p>`,
+    sayRight: 'נכון. יותר בזנב, ומשקל שמחזיר את האיזון.',
+    sayWrong: 'גם אני חתכתי פעם את החלק הנמוך. השגיאה קטנה, והתשובה זזה.',
+  });
+
+  /* ---------- 2. The gun ---------- */
+  const gun = PHY.sims.srcGun($('c-gun'), $('ctl-gun'), { events: 8, sampling: 'flat', seed: 77, locked: true, chapter: CH, section: 'gun' });
+  U.PredictCard($('pc-gun'), {
+    chapter: CH, id: 'gun', section: 'gun', tag: TAG,
+    question: `בריצת ה-Be היו \\(3\\times10^{6}\\) אירועים, ובירייה אחת של הלייזר יש \\(4.42\\times10^{11}\\) פרוטונים. כמה פרוטונים יש באירוע אחד של ldns?`,
+    options: [
+      { text: `\\(4.42\\times10^{11}\\): אירוע אחד הוא ירייה אחת של הלייזר.`, why: `ירייה שלמה באירוע אחד הייתה דורשת להעביר \\(4.42\\times10^{11}\\) פרוטונים לפני שאירוע אחד נגמר. אירוע ב-Geant4 הוא חלקיק ראשוני אחד וכל הצאצאים שלו, והנרמול לירייה נעשה בסוף, בכפל.` },
+      { text: `פרוטון אחד.`, correct: true },
+      { text: `\\(3\\times10^{6}\\), כולם יחד באירוע אחד.`, why: `\\(3\\times10^{6}\\) הוא מספר האירועים, מה שכתוב ב-<code dir="ltr">/run/beamOn</code>. כל אחד מהם הוא פרוטון אחד, ו-Geant4 מעביר אותם אחד אחרי השני.` },
+    ],
+    onRun: () => gun.play(4),
+    steps: [
+      { hint: `כמה חלקיקים יוצר <code dir="ltr">new G4ParticleGun(1)</code> בכל קריאה?`,
+        work: `חלקיק אחד: הארגומנט 1 הוא מספר החלקיקים בכל קריאה ל-<code dir="ltr">GeneratePrimaryVertex</code>, ו-ldns קורא לה פעם אחת בכל אירוע.` },
+      { hint: `אז מה האירועים מייצגים?`,
+        work: `כל אירוע הוא פרוטון אחד מהספקטרום, עם אנרגיה, כיוון ומשקל משלו. \\(3\\times10^{6}\\) אירועים הם מדגם של \\(3\\times10^{6}\\) פרוטונים מתוך הירייה.` },
+      { hint: `איך מגיעים מהמדגם לירייה?`,
+        work: `מחלקים את סכום המשקלים במספר האירועים, ומכפילים במספר הפרוטונים לירייה. כל אירוע מייצג \\(4.42\\times10^{11}/3\\times10^{6} = 1.47\\times10^{5}\\) פרוטונים של הירייה. התשובה: פרוטון אחד.` },
+    ],
+    explanation: `<p>אפשר לירות עוד אירועים, ולעבור בין <code dir="ltr">flat</code> ל-<code dir="ltr">analog</code>. מה קורה לאנרגיות ולמשקלים?</p>`,
+    sayRight: 'נכון. אירוע אחד, פרוטון אחד.',
+    sayWrong: 'גם אני חשבתי פעם שאירוע הוא ירייה. הירייה מגיעה רק בכפל של הסוף.',
+  });
+
+  /* ---------- 3. Sampling an energy ---------- */
+  const cdf = PHY.sims.srcCdf($('c-cdf'), $('ctl-cdf'), { N: 3000, show: 12, seed: 5, locked: true });
+  U.PredictCard($('pc-cdf'), {
+    chapter: CH, id: 'sample', section: 'sample', tag: TAG,
+    question: `\\(u\\) אחיד בין 0 ל-1, ו-\\(E\\) נקבע לפי \\(F(E) = u\\). איפה ייפלו רוב האנרגיות?`,
+    options: [
+      { text: `באופן אחיד בין 1.85 ל-13 MeV: אם \\(u\\) אחיד, גם \\(E\\) אחיד.`, why: `\\(u\\) אחיד, אבל \\(F\\) לא קו ישר. איפה ש-\\(F\\) עולה מהר, טווח רחב של \\(u\\) נופל על טווח צר של \\(E\\), ושם האנרגיות נערמות.` },
+      { text: `קרוב ל-1.85 MeV, איפה שהספקטרום גבוה.`, correct: true },
+      { text: `סביב האנרגיה הממוצעת, 3.94 MeV.`, why: `הממוצע הוא מרכז הכובד, לא המקום הצפוף. בספקטרום שיורד כל הזמן, הצפוף ביותר הוא ההתחלה, והזנב מושך את הממוצע ימינה.` },
+    ],
+    onRun: () => cdf.play(4),
+    steps: [
+      { hint: `מה השיפוע של \\(F(E)\\)?`,
+        work: `\\(dF/dE = f(E)/\\int f\\,dE\\). כש-\\(f\\) גדול, \\(F\\) עולה מהר.` },
+      { hint: `לכמה \\(E\\) נפרש טווח קטן \\(du\\)?`,
+        work: `\\(dE = du/(dF/dE)\\): איפה ש-\\(F\\) תלול, \\(du\\) נפרש על \\(dE\\) קטן, והדגימות צפופות. הצפיפות של הדגימות היא בדיוק \\(f(E)\\).` },
+      { hint: `ומה ההנפשה הראתה?`,
+        work: `ההיסטוגרמה עוקבת אחרי \\(f(E)\\): כמעט חצי מהדגימות מתחת ל-3 MeV, והממוצע קרוב ל-3.94 MeV. התשובה: קרוב ל-1.85 MeV.` },
+    ],
+    explanation: `<p>אפשר לדגום שוב. כמה זזה האנרגיה הממוצעת בין דגימה לדגימה?</p>`,
+    sayRight: 'נכון. הדגימות הולכות אחרי הספקטרום.',
+    sayWrong: 'גם אני ציפיתי לפיזור אחיד. העקומה המצטברת מכווצת אותו.',
+  });
+
+  /* ---------- 4. Directions in the cone ---------- */
+  const cone = PHY.sims.srcCone($('c-cone'), $('ctl-cone'), { N: 1500, deg: 20, seed: 8, locked: true, chapter: CH, section: 'cone' });
+  U.PredictCard($('pc-cone'), {
+    chapter: CH, id: 'cone', section: 'cone', tag: TAG,
+    question: `אם מגרילים את \\(\\theta\\) עצמה באופן אחיד בין 0° ל-20°, ואת \\(\\phi\\) אחיד, איך ייראו הפגיעות על הפאה הקדמית?`,
+    options: [
+      { text: `אחיד על כל העיגול: כל זווית מקבלת אותו מספר פרוטונים.`, why: `כל זווית \\(\\theta\\) מקבלת אותו מספר, אבל טבעת בזווית גדולה רחבה יותר: ההיקף שלה גדל עם \\(\\sin\\theta\\). אותו מספר פרוטונים על טבעת גדולה יותר הוא צפיפות קטנה יותר.` },
+      { text: `צפוף במרכז, ודליל לכיוון השפה.`, correct: true },
+      { text: `צפוף דווקא בשפה.`, why: `בשפה הטבעות הכי גדולות, וזה מדלל. צפיפות בשפה הייתה דורשת יותר פרוטונים בזוויות גדולות, וההגרלה הזאת נותנת לכל זווית אותו מספר.` },
+    ],
+    onRun: () => cone.play(3),
+    steps: [
+      { hint: `מה גודל הזווית המרחבית של טבעת בין \\(\\theta\\) ל-\\(\\theta + d\\theta\\)?`,
+        work: `\\(d\\Omega = 2\\pi\\sin\\theta\\,d\\theta\\): טבעות בזוויות גדולות גדולות יותר.` },
+      { hint: `כמה פרוטונים מקבלת כל טבעת כש-\\(\\theta\\) אחיד?`,
+        work: `אותו מספר לכל \\(d\\theta\\). הצפיפות לזווית מרחבית היא המספר הזה חלקי \\(2\\pi\\sin\\theta\\,d\\theta\\), והיא גדלה כש-\\(\\theta\\) קטן: הכיוונים נערמים על הציר.` },
+      { hint: `ומה ההנפשה ספרה בתוך חצי הזווית, 10°?`,
+        work: `עם \\(\\theta\\) אחיד כחצי מהפגיעות בתוך 10°, ועם \\(\\cos\\theta\\) אחיד רק כרבע, כמו שצריך: \\((1-\\cos 10^\\circ)/(1-\\cos 20^\\circ) = 0.252\\). התשובה: צפוף במרכז.` },
+    ],
+    explanation: `<p>הסליידר פתוח. מה קורה למספר הפרוטונים לירייה כשמקטינים את הקונוס ל-10°?</p>`,
+    sayRight: 'נכון. θ אחיד נערם על הציר.',
+    sayWrong: 'גם אני הגרלתי פעם θ ישירות. הטבעות החיצוניות גדולות יותר.',
+  });
+
+  /* ---------- 5. Weights ---------- */
+  const wts = PHY.sims.srcWeights($('c-weights'), $('ctl-weights'), { N: 20000, seed: 3, locked: true });
+  U.PredictCard($('pc-weights'), {
+    chapter: CH, id: 'weights', section: 'weights', tag: TAG,
+    question: `מה המשקל הממוצע של הפרוטונים שנורו בדגימה <code dir="ltr">flat</code>?`,
+    options: [
+      { text: `1.`, correct: true },
+      { text: `הרבה פחות מ-1: רוב הפרוטונים נורו בזנב, ושם המשקל קטן.`, why: `נכון שכ-63% מהפרוטונים נורו מעל 6 MeV, עם משקלים קטנים מ-1. אבל הפרוטונים הנמוכים מקבלים משקלים של עד כ-7, והם מאזנים בדיוק.` },
+      { text: `11.15: הרוחב של הטווח, \\(E_{max}-E_{min}\\).`, why: `הרוחב מופיע בנוסחה, אבל הוא מוכפל ב-\\(f(E)/\\int f\\,dE\\), שהממוצע שלו על הטווח הוא \\(1/(E_{max}-E_{min})\\). השניים מבטלים זה את זה.` },
+    ],
+    onRun: () => wts.play(3.5),
+    steps: [
+      { hint: `איך מחשבים ממוצע של \\(w\\) כש-\\(E\\) אחיד על הטווח?`,
+        work: `\\(\\langle w\\rangle = \\frac{1}{E_{max}-E_{min}}\\int w(E)\\,dE\\).` },
+      { hint: `נציב את \\(w\\).`,
+        work: `\\(\\langle w\\rangle = \\frac{1}{E_{max}-E_{min}}\\int \\frac{f(E)\\,(E_{max}-E_{min})}{\\int f\\,dE}\\,dE = \\frac{\\int f\\,dE}{\\int f\\,dE}\\).` },
+      { hint: `ומה ההנפשה מדדה?`,
+        work: `ממוצע קרוב מאוד ל-1, בתוך השגיאה, וההיסטוגרמה עם המשקלים עוקבת אחרי \\(f(E)\\). התשובה: 1.` },
+    ],
+    explanation: `<p>אפשר לירות פרוטונים חדשים. כמה רחוק מ-1 יוצא הממוצע, ביחס לשגיאה שלו?</p>`,
+    sayRight: 'נכון. בממוצע, המשקל הוא 1.',
+    sayWrong: 'גם אני ציפיתי שהזנב ימשוך למטה. המשקלים הגדולים בהתחלה מאזנים.',
+  });
+
+  /* ---------- 6. Checking the input ---------- */
+  const chk = PHY.sims.srcCheck($('c-check'), $('ctl-check'), { N: 300000, seed: 11, locked: true });
+  U.PredictCard($('pc-check'), {
+    chapter: CH, id: 'check', section: 'check', tag: TAG,
+    question: `<code dir="ltr">check_inputs.py</code> מחשב \\(\\chi^2/\\text{ndf}\\) על 30 תאים. איזה ערך אומר שהספקטרום שנורה מתאים לקובץ?`,
+    options: [
+      { text: `כמה שיותר קרוב ל-0.`, why: `\\(\\chi^2\\) קרוב ל-0 אומר שכל תא פגע בערך הצפוי הרבה יותר טוב ממה שהרעש הסטטיסטי מאפשר. זה סימן לבעיה, למשל שגיאות מנופחות, לא להתאמה טובה.` },
+      { text: `בערך 1.`, correct: true },
+      { text: `מתחת ל-0.05, כמו ערך p.`, why: `0.05 הוא סף מקובל לערך p, שהוא הסתברות. \\(\\chi^2/\\text{ndf}\\) הוא גודל אחר: הסטייה הממוצעת בכל תא, בריבוע וביחידות של השגיאה.` },
+    ],
+    onRun: () => chk.play(2.5),
+    steps: [
+      { hint: `מה התוחלת של \\((\\text{נמדד}-\\text{צפוי})^2/\\sigma^2\\) בתא אחד?`,
+        work: `אם השגיאה \\(\\sigma\\) נכונה, הסטייה בכל תא היא בסדר גודל של \\(\\sigma\\), והתוחלת של הריבוע חלקי \\(\\sigma^2\\) היא 1.` },
+      { hint: `ומה הסכום על 30 תאים, חלקי 30?`,
+        work: `\\(\\chi^2 \\approx 30\\), ולכן \\(\\chi^2/\\text{ndf} \\approx 1\\), עם פיזור של בערך \\(\\sqrt{2/30} = 0.26\\).` },
+      { hint: `מה יצא בהנפשה, ומה בריצה האמיתית?`,
+        work: `בהנפשה ערך קרוב ל-1, ובריצה עם זרע אחר ערך אחר, אבל גם הוא קרוב. בריצת ה-Be: \\(35.7/30 = 1.19\\). התשובה: בערך 1.` },
+    ],
+    explanation: `<p>אפשר להריץ שוב עם זרע אחר. באיזה טווח נע \\(\\chi^2/\\text{ndf}\\)?</p>`,
+    sayRight: 'נכון. בערך 1, כמו שהרעש מבטיח.',
+    sayWrong: 'גם אני חיפשתי פעם אפס. אפס הוא חשוד.',
+  });
+
+  /* ---------- 8. Playground ---------- */
+  PHY.sims.srcLab($('c-lab'), $('ctl-lab'), { chapter: CH, section: 'playground' });
+
+  /* ---------- 9. Game ---------- */
+  PHY.sims.srcGame($('c-game'), $('ctl-game'), { chapter: CH, section: 'game' });
+
+  /* ---------- 10. Traps ---------- */
+  const trapDone = {};
+  const trapFinished = (name) => {
+    trapDone[name] = true;
+    if (trapDone.a && trapDone.b && trapDone.c && trapDone.d) PHY.progress.markSection(CH, 'traps');
+  };
+
+  const runs = PHY.sims.srcRuns($('c-trap1'), $('ctl-trap1'), { R: 12, N: 2e5, seed: 99, locked: true });
+  U.PredictCard($('pc-trap1'), {
+    chapter: CH, id: 'trap1', tag: 'מלכודת 1: flat משנה את התוצאה',
+    question: `אותו ממיר ואותו מספר פרוטונים, \\(2\\times10^{5}\\), פעם עם <code dir="ltr">analog</code> ופעם עם <code dir="ltr">flat</code>, 12 פעמים כל אחת. מה יראו התוצאות?`,
+    options: [
+      { text: `<code dir="ltr">flat</code> גבוה יותר: הוא יורה יותר פרוטונים אנרגטיים, ואלה עושים יותר נייטרונים.`, why: `הוא יורה יותר פרוטונים אנרגטיים, אבל כל אחד מהם נספר עם משקל קטן. סכום המשקלים מחזיר בדיוק את מה שהספקטרום היה נותן.` },
+      { text: `אותו ממוצע, ו-<code dir="ltr">flat</code> מתפזר פחות.`, correct: true },
+      { text: `<code dir="ltr">flat</code> נמוך יותר: המשקלים בזנב קטנים.`, why: `המשקלים בזנב קטנים, אבל יש שם יותר פרוטונים. מספר כפול משקל נשאר כמו בספקטרום, כי \\(\\langle w\\rangle = 1\\).` },
+    ],
+    onRun: () => runs.play(3.5),
+    steps: [
+      { hint: `מה התוחלת של סכום המשקלים לפרוטון, בכל אחת מהדגימות?`,
+        work: `ב-<code dir="ltr">analog</code> כל פרוטון במשקל 1. ב-<code dir="ltr">flat</code> הסיכוי לירות אנרגיה \\(E\\) הוא \\(1/(E_{max}-E_{min})\\), והמשקל \\(w(E)\\): המכפלה היא \\(f(E)/\\int f\\), בדיוק כמו ב-<code dir="ltr">analog</code>. לכן התוחלת זהה.` },
+      { hint: `ומה עם הפיזור?`,
+        work: `ב-<code dir="ltr">flat</code> נספרים הרבה יותר נייטרונים, כל אחד עם משקל קטן, ולכן הפיזור היחסי קטן יותר.` },
+      { hint: `ומה ההנפשה הראתה?`,
+        work: `שתי הסדרות מתפזרות סביב אותו קו, \\(4.47\\times10^{-4}\\), והנקודות הירוקות של <code dir="ltr">flat</code> צמודות אליו יותר. התשובה: אותו ממוצע, פיזור קטן יותר.` },
+    ],
+    onDone: () => trapFinished('a'),
+    sayRight: 'נכון. אותה תשובה, פחות רעש.',
+    sayWrong: 'גם אני חשדתי שהמשקלים מזיזים את התוצאה. הם רק מקטינים את הרעש.',
+  });
+
+  const theta = PHY.sims.srcTheta($('c-trap2'), $('ctl-trap2'), { N: 20000, deg: 20, inner: 10, seed: 4, locked: true });
+  U.PredictCard($('pc-trap2'), {
+    chapter: CH, id: 'trap2', tag: 'מלכודת 2: θ אחיד הוא איזוטרופי',
+    question: `מקור איזוטרופי בתוך קונוס של 20°. איזה חלק מהפרוטונים יוצאים בתוך 10° מהציר?`,
+    options: [
+      { text: `חצי: 10° הם חצי מ-20°.`, why: `ככה זה היה אם \\(\\theta\\) הייתה אחידה. במקור איזוטרופי כל זווית מרחבית שווה, וזווית מרחבית של קונוס גדלה בערך כמו \\(\\theta^2\\), לא כמו \\(\\theta\\).` },
+      { text: `בערך רבע.`, correct: true },
+      { text: `בערך 10%.`, why: `זה פחות מדי. הקונוס הפנימי, עד 10°, תופס יותר מעשירית מהזווית המרחבית: \\((1-\\cos 10^\\circ)/(1-\\cos 20^\\circ)\\) הוא כרבע.` },
+    ],
+    onRun: () => theta.play(3),
+    steps: [
+      { hint: `מה אחיד במקור איזוטרופי?`,
+        work: `\\(\\cos\\theta\\): \\(d\\Omega = 2\\pi\\,|d(\\cos\\theta)|\\), ולכן אחיד בזווית מרחבית פירושו \\(\\cos\\theta\\) אחיד.` },
+      { hint: `מה החלק בתוך 10°?`,
+        work: `\\((1-\\cos 10^\\circ)/(1-\\cos 20^\\circ) = 0.01519/0.06031 = 0.252\\).` },
+      { hint: `ולמה כמעט בדיוק רבע?`,
+        work: `בזוויות קטנות \\(1-\\cos\\theta \\approx \\theta^2/2\\), ולכן היחס הוא \\((10/20)^2 = 0.25\\), כמו שטח של עיגול ברדיוס חצי. בהיסטוגרמה מספר הכיוונים גדל עם \\(\\theta\\), כמו \\(\\sin\\theta\\). התשובה: בערך רבע, 25.2%.` },
+    ],
+    onDone: () => trapFinished('b'),
+    sayRight: 'נכון. רבע, לא חצי.',
+    sayWrong: 'גם אני חשבתי שחצי זווית זה חצי מהפרוטונים. זווית מרחבית גדלה כמו ריבוע.',
+  });
+
+  const cut = PHY.sims.srcCut($('c-trap3'), $('ctl-trap3'), { locked: true });
+  U.PredictCard($('pc-trap3'), {
+    chapter: CH, id: 'trap3', tag: 'מלכודת 3: לחתוך ב-1.85 MeV מאבד נייטרונים',
+    question: `ריצת ה-Be ירתה החל מ-1.85 MeV, ולא מ-0.5 MeV. הפרוטונים בין 0.5 ל-1.85 MeV הם 65% מכל הפרוטונים. כמה נייטרונים הלכו לאיבוד?`,
+    options: [
+      { text: `בערך 65%, כמו החלק של הפרוטונים.`, why: `ככה זה היה אם כל פרוטון היה מייצר נייטרונים באותו סיכוי. מתחת ל-1.88 MeV אף ערוץ (p,n) בממירים של ldns לא פתוח.` },
+      { text: `אף אחד.`, correct: true },
+      { text: `מעט, מהפרוטונים שקרובים לסף.`, why: `הסף הנמוך ביותר, של ⁷Li, הוא 1.88 MeV, מעל 1.85 MeV. ופרוטון רק מאט בממיר: הוא לא יכול לעלות מעל האנרגיה שבה נורה.` },
+    ],
+    onRun: () => cut.play(3),
+    steps: [
+      { hint: `מה הסף הנמוך ביותר של (p,n) בממירים של ldns?`,
+        work: `⁷Li(p,n) ב-1.88 MeV. ⁹Be ב-2.06 MeV, ¹⁹F ב-4.2 MeV, ו-Pb רק מעל כ-10 MeV.` },
+      { hint: `מה קורה לפרוטון שנורה ב-1.8 MeV?`,
+        work: `הוא מאט ונעצר, ולא מגיע אף פעם ל-1.88 MeV. אין לו שום ערוץ שמייצר נייטרון.` },
+      { hint: `אז מה החיתוך עושה?`,
+        work: `הוא רק חוסך זמן: \\(1 - 4.42\\times10^{11}/1.28\\times10^{12} = 0.65\\), כלומר 65% מהפרוטונים היו נורים לשווא. התשובה: אף נייטרון לא הלך לאיבוד.` },
+    ],
+    onDone: () => trapFinished('c'),
+    sayRight: 'נכון. מתחת לסף אין מה לאבד.',
+    sayWrong: 'גם אני נבהלתי פעם מ-65%. מתחת לסף הם רק מבזבזים זמן.',
+  });
+
+  const pershot = PHY.sims.srcPerShot($('c-trap4'), $('ctl-trap4'), { locked: true });
+  U.PredictCard($('pc-trap4'), {
+    chapter: CH, id: 'trap4', tag: 'מלכודת 4: פרוטונים לירייה הם נתון של הקובץ',
+    question: `אותו קובץ של HERMIONE, אבל <code dir="ltr">/ldns/src/Emin 0.5 MeV</code> במקום 1.85 MeV. כמה פרוטונים לירייה ידפיס ldns?`,
+    options: [
+      { text: `\\(4.42\\times10^{11}\\), כמו קודם: המספר הוא של הקובץ.`, why: `הקובץ נותן ספקטרום לסטרדיאן, לא מספר. המספר לירייה הוא האינטגרל בטווח שבחרנו, כפול הזווית המרחבית שבחרנו.` },
+      { text: `\\(1.28\\times10^{12}\\), כמעט פי 3.`, correct: true },
+      { text: `קצת יותר, כ-\\(4.6\\times10^{11}\\): הוספנו רק פרוסה דקה של אנרגיה.`, why: `הפרוסה דקה ב-MeV, אבל שם הספקטרום הכי גבוה: בין 0.5 ל-1.85 MeV יש כמעט פי 2 יותר פרוטונים מכל השאר.` },
+    ],
+    onRun: () => pershot.play(3),
+    steps: [
+      { hint: `מה ldns מחשב כשהוא מדפיס פרוטונים לירייה?`,
+        work: `\\(N_{shot} = 2\\pi(1-\\cos\\theta_{max})\\int_{E_{min}}^{E_{max}} f\\,dE\\): גם הטווח וגם הקונוס נכנסים.` },
+      { hint: `כמה פרוטונים יש מעל 0.5 MeV?`,
+        work: `שורת הכותרת של הקובץ אומרת: \\(1.278\\times10^{12}\\) מעל 0.5 MeV בקונוס של 20°. זה פי 2.9 מ-\\(4.42\\times10^{11}\\).` },
+      { hint: `ומה עוד משנה את המספר?`,
+        work: `הקונוס: עם <code dir="ltr">halfAngle 10 deg</code> המספר יורד לרבע, \\(1.11\\times10^{11}\\), כמו העמודה השלישית. התשובה: \\(1.28\\times10^{12}\\).` },
+    ],
+    onDone: () => trapFinished('d'),
+    sayRight: 'נכון. הטווח והקונוס הם חלק מהמספר.',
+    sayWrong: 'גם אני חשבתי שהמספר נמצא בקובץ. בקובץ יש רק את f(E).',
+  });
+
+  /* ---------- 11. Problems ---------- */
+  const probs = $('problems-host');
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 1: הזווית המרחבית של הקונוס',
+    text: `מה הזווית המרחבית של קונוס בחצי זווית של 20°?`,
+    fields: [{ label: '\\(\\Omega\\)', answer: 0.379, unit: 'sr' }],
+    steps: [
+      { hint: `איזו נוסחה נותנת את הזווית המרחבית של קונוס?`,
+        work: `\\(\\Omega = 2\\pi(1-\\cos\\theta_{max})\\).` },
+      { hint: `מה \\(1-\\cos 20^\\circ\\)?`,
+        work: `\\(\\cos 20^\\circ = 0.9397\\), ולכן \\(1-\\cos 20^\\circ = 0.0603\\).` },
+      { hint: `נכפול ב-\\(2\\pi\\).`,
+        work: `\\(2\\pi\\cdot 0.0603 = 0.379\\) sr, פחות מ-3% מהכדור כולו (\\(4\\pi\\)). התשובה: 0.379 sr.` },
+    ],
+  });
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 2: פרוטונים לירייה',
+    text: `ldns הדפיס \\(\\int f\\,dE = 1.165\\times10^{12}\\) פרוטונים לסטרדיאן, בין 1.85 ל-13 MeV, בקונוס של 20°. כמה פרוטונים בירייה?`,
+    fields: [{ label: '\\(N_{shot}\\)', answer: 4.42, unit: '×10¹¹' }],
+    steps: [
+      { hint: `מה צריך להכפיל באינטגרל?`,
+        work: `את הזווית המרחבית של הקונוס: \\(N_{shot} = \\Omega\\int f\\,dE\\).` },
+      { hint: `מה \\(\\Omega\\) של 20°?`,
+        work: `0.379 sr, משאלה 1.` },
+      { hint: `נכפול.`,
+        work: `\\(0.379\\cdot 1.165\\times10^{12} = 4.42\\times10^{11}\\), כמו בשורה <code dir="ltr">protons per shot (cone): 4.416e+11</code>. התשובה: \\(4.42\\times10^{11}\\).` },
+    ],
+  });
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 3: המשקל של פרוטון של 12 MeV',
+    text: `בקובץ של HERMIONE, השורה של 12 MeV היא <code dir="ltr">12.000;9.560443e+09</code>. בדגימה <code dir="ltr">flat</code> בין 1.85 ל-13 MeV, עם \\(\\int f\\,dE = 1.165\\times10^{12}\\), מה המשקל של פרוטון של 12 MeV?`,
+    fields: [{ label: '\\(w\\)', answer: 0.0915, unit: '' }],
+    steps: [
+      { hint: `מה הנוסחה של המשקל?`,
+        work: `\\(w = f(E)\\,(E_{max}-E_{min})/\\int f\\,dE\\).` },
+      { hint: `מה רוחב הטווח?`,
+        work: `\\(E_{max}-E_{min} = 13 - 1.85 = 11.15\\) MeV.` },
+      { hint: `נציב.`,
+        work: `\\(w = 9.560\\times10^{9}\\cdot 11.15/1.165\\times10^{12} = 0.0915\\). פרוטון של 12 MeV נספר כאחד חלקי 11 בערך. התשובה: 0.0915.` },
+    ],
+  });
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 4: analog מול flat',
+    text: `שתי ריצות באותו אורך. ב-<code dir="ltr">analog</code> נספרו 300 נייטרונים, וב-<code dir="ltr">flat</code> 1200 שורות של נייטרונים, וכמעט כולם מהזנב, עם משקלים קרובים זה לזה. מה השגיאה היחסית בכל אחת, באחוזים?`,
+    fields: [
+      { label: '<bdi>analog</bdi>', answer: 5.8, unit: '%' },
+      { label: '<bdi>flat</bdi>', answer: 2.9, unit: '%' },
+    ],
+    steps: [
+      { hint: `מה השגיאה היחסית של ספירה של \\(k\\)?`,
+        work: `\\(1/\\sqrt{k}\\). עם משקלים כמעט שווים, אותו כלל חל על סכום המשקלים.` },
+      { hint: `נציב 300.`,
+        work: `\\(1/\\sqrt{300} = 0.058\\), כלומר 5.8% ב-<code dir="ltr">analog</code>.` },
+      { hint: `ומה עם 1200?`,
+        work: `\\(1/\\sqrt{1200} = 0.029\\), כלומר 2.9%: פי 2 טוב יותר. כדי להגיע לזה ב-<code dir="ltr">analog</code> היה צריך פי 4 אירועים. התשובה: 5.8% ו-2.9%.` },
+    ],
+  });
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 5: כמה פרוטונים מייצג אירוע',
+    text: `ריצת ה-Be: \\(3\\times10^{6}\\) אירועים, ו-\\(4.42\\times10^{11}\\) פרוטונים לירייה. כמה פרוטונים של הירייה מייצג כל אירוע?`,
+    fields: [{ label: 'פרוטונים', answer: 1.47, unit: '×10⁵' }],
+    steps: [
+      { hint: `מה מחלקים במה?`,
+        work: `את מספר הפרוטונים לירייה במספר האירועים: \\(4.42\\times10^{11}/3\\times10^{6}\\).` },
+      { hint: `נפריד מספרים וחזקות.`,
+        work: `\\((4.42/3)\\times10^{11-6} = 1.473\\times10^{5}\\).` },
+      { hint: `ומה זה אומר על נייטרון אחד בטבלה?`,
+        work: `שורה במשקל \\(w\\) מייצגת \\(1.47\\times10^{5}\\,w\\) נייטרונים בירייה. התשובה: \\(1.47\\times10^{5}\\) פרוטונים לאירוע.` },
+    ],
+  });
+
+  /* ---------- 12. Quiz ---------- */
+  U.Quiz($('quiz-host'), {
+    chapter: CH, section: 'quiz',
+    questions: [
+      {
+        type: 'num',
+        q: `אותו קובץ, אותו טווח, 1.85 עד 13 MeV, אבל קונוס של 10°. כמה פרוטונים לירייה, ביחידות של \\(10^{11}\\)?`,
+        answer: 1.11, unit: '×10¹¹',
+        steps: [
+          { hint: `מה היחס בין הזוויות המרחביות של 10° ושל 20°?`,
+            work: `\\((1-\\cos 10^\\circ)/(1-\\cos 20^\\circ) = 0.01519/0.06031 = 0.252\\).` },
+          { hint: `נכפול את המספר של 20°.`,
+            work: `\\(0.252\\cdot 4.42\\times10^{11} = 1.11\\times10^{11}\\). התשובה: 1.11.` },
+        ],
+      },
+      {
+        type: 'num',
+        q: `מה הערך הקטן ביותר של \\(\\cos\\theta\\) בטבלה <code dir="ltr">primary</code> של ריצה עם קונוס של 20°?`,
+        answer: 0.94, unit: '',
+        steps: [
+          { hint: `באיזה טווח מוגרל \\(\\cos\\theta\\)?`,
+            work: `אחיד בין \\(\\cos\\theta_{max}\\) ל-1.` },
+          { hint: `מה \\(\\cos 20^\\circ\\)?`,
+            work: `\\(\\cos 20^\\circ = 0.9397\\), כמו הקצה השמאלי של ההיסטוגרמה ב-<code dir="ltr">input_check.png</code>. התשובה: 0.94.` },
+        ],
+      },
+      {
+        type: 'mc',
+        q: `בדגימה בהיפוך הפונקציה המצטברת, מה מוגרל באופן אחיד?`,
+        options: [`האנרגיה \\(E\\)`, `\\(u = F(E)\\), בין 0 ל-1`, `\\(f(E)\\)`, `הזווית \\(\\theta\\)`],
+        answer: 1,
+        steps: [
+          { hint: `מה ידוע על \\(F(E)\\) של משתנה אקראי?`,
+            work: `אם \\(E\\) מתפלג לפי \\(f\\), אז \\(F(E)\\) מתפלג אחיד בין 0 ל-1.` },
+          { hint: `ומה עושים בקוד?`,
+            work: `מגרילים \\(u\\) אחיד ומחפשים \\(E = F^{-1}(u)\\), כמו <code dir="ltr">target = G4UniformRand() * fIntegral</code>. התשובה: \\(u = F(E)\\).` },
+        ],
+      },
+      {
+        type: 'mc',
+        q: `מה נכון לגבי דגימה <code dir="ltr">flat</code> עם משקלים?`,
+        options: [`היא משנה את התפוקה לפרוטון, ולכן צריך לתקן בסוף`, `\\(\\langle w\\rangle = 1\\): התוחלת של כל ספירה לא משתנה, רק הפיזור`, `היא נותנת לכל פרוטון משקל 1`, `היא מתאימה רק לממיר עבה`],
+        answer: 1,
+        steps: [
+          { hint: `מה המשקל הממוצע?`,
+            work: `\\(\\langle w\\rangle = 1\\), ובריצת ה-Be נמדד \\(0.9997 \\pm 0.0008\\).` },
+          { hint: `ומה זה אומר על התוצאה?`,
+            work: `כל ספירה לפרוטון מקור נשארת עם אותה תוחלת, והשגיאה קטנה כשיורים יותר בזנב. התשובה: התוחלת לא משתנה, רק הפיזור.` },
+        ],
+      },
+      {
+        type: 'mc',
+        q: `איך ldns יוצר את הפרוטון של כל אירוע?`,
+        options: [`עם GPS ופקודות <code dir="ltr">/gps/</code> במאקרו`, `עם <code dir="ltr">G4ParticleGun(1)</code>, ואת האנרגיה והכיוון הוא מגריל בעצמו בקוד`, `קורא את כל הפרוטונים של הירייה מקובץ בתחילת הריצה`, `Geant4 מגריל אותם לבד מתוך רשימת הפיזיקה`],
+        answer: 1,
+        steps: [
+          { hint: `מה יש בבנאי של <code dir="ltr">PrimaryGeneratorAction</code>?`,
+            work: `<code dir="ltr">fGun = new G4ParticleGun(1)</code>: תותח של חלקיק אחד בכל קריאה.` },
+          { hint: `ומי קובע את האנרגיה והכיוון?`,
+            work: `<code dir="ltr">GeneratePrimaries</code>: <code dir="ltr">SampleEnergy</code> לאנרגיה, ושלוש שורות של \\(\\cos\\theta\\) ו-\\(\\phi\\) לכיוון. התשובה: <code dir="ltr">G4ParticleGun(1)</code>, עם הגרלה בקוד.` },
+        ],
+      },
+      {
+        type: 'num',
+        q: `<span class="chip">חזרה מפרק 1</span> בריצה נספרו 1341 נייטרונים בלי משקלים. מה השגיאה היחסית, באחוזים?`,
+        answer: 2.7, unit: '%',
+        steps: [
+          { hint: `מה הפיזור של ספירה של 1341?`,
+            work: `\\(\\sqrt{1341} = 36.6\\).` },
+          { hint: `ומה זה ביחס לספירה?`,
+            work: `\\(36.6/1341 = 0.027\\). התשובה: 2.7%.` },
+        ],
+      },
+      {
+        type: 'mc',
+        q: `<span class="chip">חזרה מפרק 2</span> מה זה אירוע (event) ב-Geant4?`,
+        options: [`צעד אחד של חלקיק`, `חלקיק ראשוני אחד וכל הצאצאים שלו`, `ירייה אחת של הלייזר`, `כל החלקיקים מאותו סוג בריצה`],
+        answer: 1,
+        steps: [
+          { hint: `מה מתחיל אירוע, ומתי הוא נגמר?`,
+            work: `אירוע מתחיל בחלקיק הראשוני שהמחולל יוצר, ונגמר כשהמחסנית של המשניים מתרוקנת.` },
+          { hint: `אז מה הוא כולל?`,
+            work: `את החלקיק הראשוני ואת כל העץ שנוצר ממנו. ב-ldns: פרוטון אחד וכל מה שיצא ממנו. התשובה: חלקיק ראשוני אחד וכל הצאצאים שלו.` },
+        ],
+      },
+    ],
+  });
+
+  U.initChapter({ id: CH });
+})();
+</script>
+</body>
+</html>

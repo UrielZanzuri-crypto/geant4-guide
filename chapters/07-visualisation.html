@@ -1,0 +1,752 @@
+<!doctype html>
+<html lang="he" dir="rtl" data-course="geant4">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>פרק 7: ויזואליזציה | Geant4 צעד אחר צעד</title>
+<meta name="description" content="איך רואים ב-Geant4 גיאומטריה ומסלולים: סצנה, מערכת ציור וצופה, נקודת מבט, סגנון, צבעים ומסננים, חלון ותמונה בלי חלון, ולמה התמונה איננה התוצאה. פרק אינטראקטיבי עם שתי התמונות האמיתיות של ממיר ה-Be.">
+<script>try{var t=localStorage.getItem('phy-theme');document.documentElement.setAttribute('data-theme',t||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'))}catch(e){document.documentElement.setAttribute('data-theme','light')}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&family=Rubik:wght@500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css">
+<link rel="stylesheet" href="../css/style.css">
+<style>
+  /* Chapter 7 only */
+  .quest-list, .read-list { margin: 10px 0 0; padding-inline-start: 22px; }
+  .quest-list li, .read-list li { margin-bottom: 6px; }
+  figure.sim > .sim-controls { grid-template-columns: minmax(0, 1fr); }
+  .sim-controls > * { min-width: 0; }
+  .vis-cmds { direction: ltr; text-align: left; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-s); padding: 8px 10px; }
+  .vis-cmds > div { white-space: pre-wrap; overflow-wrap: anywhere; padding-left: 3ch; text-indent: -3ch; }
+  .pic { margin: 14px 0 18px; }
+  .pic img { display: block; width: 100%; height: auto; border-radius: var(--radius-m); border: 1px solid var(--line); }
+  .pic figcaption { font-size: 0.9rem; color: var(--ink-soft); margin-top: 6px; line-height: 1.55; }
+  .cmd-list { display: grid; gap: 0; margin-top: 6px; }
+  .cmd-row { padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .cmd-row .cmds { direction: ltr; text-align: left; display: flex; flex-wrap: wrap; gap: 4px 6px; }
+  .cmd-row .cmds code { font-size: 0.8em; overflow-wrap: anywhere; }
+  .cmd-row p { margin: 4px 0 0; font-size: 0.95rem; }
+  /* the offscreen pipeline */
+  .vis-off { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 12px; }
+  .vis-off-head { font-size: 0.85rem; color: var(--ink-soft); font-weight: 600; }
+  .vis-term { direction: ltr; text-align: left; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5; padding: 8px 10px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-s); }
+  .vis-term > div { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .vis-term .t-cmd { color: var(--accent); font-weight: 600; }
+  .vis-term .t-file { color: var(--good); font-weight: 600; }
+  .vis-term .t-note { direction: rtl; text-align: right; font-family: var(--font-body); font-size: 0.84rem; color: var(--ink-soft); font-style: italic; margin-bottom: 4px; }
+  .vis-off-img { display: block; width: 100%; height: auto; border-radius: var(--radius-s); }
+</style>
+</head>
+<body>
+
+<header class="topbar" data-topbar></header>
+
+<main>
+
+<!-- 1. HOOK -->
+<section class="section wrap" data-section="hook" id="hook">
+  <span class="kicker">פרק 7: ויזואליזציה</span>
+  <h1 class="hero-title">כמה מסלולים ירוקים?</h1>
+  <p class="lead">הדבר הראשון שרואים כשפותחים את ldns הוא חלון: הממיר, קונוס של פרוטונים אדומים, ובתקווה גם נייטרונים ירוקים. בפרק הזה נלמד לכוון את החלון הזה, לצבוע, לסנן ולשמור תמונה, ולמה תמונה לא עונה על השאלה "כמה".</p>
+  <p>נתחיל בניסוי. 10000 פרוטונים מהספקטרום האמיתי של הלייזר, מ-0.5 MeV ובלי משקלים, יורים על דיסקת Be. מסנן (filter) נותן לצייר רק נייטרונים.</p>
+  <div id="pc-hook">
+    <figure class="sim"><canvas id="c-hook"></canvas><div class="sim-controls" id="ctl-hook"></div></figure>
+  </div>
+  <p class="block-gap">בספקטרום האמיתי רוב הפרוטונים מתחת ל-2 MeV, מתחת לסף של ⁹Be(p,n) ב-2.06 MeV, והם נעצרים בלי לייצר כלום. לכן תמונה של התערובת האמיתית כמעט ריקה מירוק. כדי לראות נייטרונים נולדים, מטים את המקור: מעלים את Emin ודוגמים flat, כך שרוב הפרוטונים שנורים הם אלה שמייצרים נייטרונים.</p>
+  <p>זה מותר בתמונה, כי תמונה לא סופרת. בתוצאה מספרית מקור מוטה חייב לבוא עם משקלים, כמו שראינו בפרק 5. הבורר שמתחת לסימולציה מריץ את אותו ניסוי עם המקור של ריצת ה-Be, flat מ-1.85 MeV.</p>
+</section>
+
+<!-- 2. CYCLE: scene, scene handler, viewer -->
+<section class="section wrap" data-section="scene" id="scene">
+  <div class="section-head"><span class="section-num">2</span><h2>סצנה, מערכת ציור וצופה</h2></div>
+  <p>מערכת הוויזואליזציה של Geant4 בנויה משלושה חלקים. סצנה (scene) היא רשימת מה שמציירים: הגיאומטריה, הצירים, המסלולים. מטפל סצנה (scene handler) שייך למערכת ציור (graphics system) אחת, ומתרגם את הסצנה לשפה שלה. צופה (viewer) הוא מבט אחד על הסצנה: מאיזה כיוון, באיזה סגנון ובאיזה זום.</p>
+  <p>מערכות הציור שנפגוש: OGL, ציור OpenGL בחלון של Qt, ו-TSG מציירות בחלון, <code dir="ltr">TSG_OFFSCREEN</code> מציירת לזיכרון, ו-<code dir="ltr">VRML2FILE</code> ו-<code dir="ltr">HepRepFile</code> כותבות קובץ שפותחים בתוכנה אחרת. <code dir="ltr">/vis/open</code> פותח מערכת ציור ואיתה מטפל וצופה, ו-<code dir="ltr">/vis/drawVolume</code> מכניס את הגיאומטריה לסצנה. כך מתחיל <code dir="ltr">macros/vis.mac</code> של ldns:</p>
+  <pre class="code" dir="ltr">/vis/open
+/vis/viewer/set/autoRefresh false
+/vis/drawVolume
+/vis/viewer/set/viewpointThetaPhi 70 20 deg
+/vis/viewer/set/style surface
+/vis/viewer/set/hiddenMarker true
+/vis/viewer/zoom 4
+/vis/scene/add/axes 0 0 0 10 mm
+/vis/scene/add/trajectories smooth</pre>
+  <p>נקודת המבט היא כיוון, מהמטרה אל המצלמה. <code dir="ltr">viewpointVector</code> נותן אותו כווקטור x y z, ו-<code dir="ltr">viewpointThetaPhi</code> כשתי זוויות: θ מציר z, ו-φ סביבו. בברירת המחדל ציר y למעלה במסך. בצופה למטה המבט של vis.mac, והחץ בפינה מראה לאן הקרן (+z) הולכת על המסך.</p>
+  <div id="pc-scene">
+    <figure class="sim"><canvas id="c-scene"></canvas><div class="sim-controls" id="ctl-scene"></div></figure>
+  </div>
+  <p class="block-gap">המצלמה ב-<code dir="ltr">-1 0 0</code> יושבת בצד של x השלילי ומסתכלת לכיוון +x. כשהראש של המצלמה ב-+y, הכיוון +z יוצא ימינה, וכך הקרן זורמת משמאל לימין. ההערות של <code dir="ltr">macros/template_picture.mac</code> אומרות בדיוק את זה, ומראות גם את שאר פקודות הצופה:</p>
+  <pre class="code" dir="ltr"># TSG_OFFSCREEN = draw into a file (no window); size in pixels
+/vis/open TSG_OFFSCREEN 1600x1000
+/vis/viewer/set/autoRefresh false
+/vis/drawVolume
+# direction FROM which you look: -1 0 0 = from the side (beam left -&gt; right);
+# -1 0.35 -0.3 = oblique from above
+/vis/viewer/set/viewpointVector -1 0.35 -0.3
+/vis/viewer/set/lightsVector -1 0.5 0.5
+# wireframe (see inside) or surface (solid); auxiliaryEdge draws all edges of the cylinders
+/vis/viewer/set/style wireframe
+/vis/viewer/set/auxiliaryEdge true
+/vis/viewer/zoomTo 1.3</pre>
+  <p><code dir="ltr">style wireframe</code> מצייר שלד של קווים, ו-<code dir="ltr">surface</code> משטחים. <code dir="ltr">auxiliaryEdge true</code> מוסיף את כל הקווים של הגליל, כי בלעדיו רואים בעיקר את שתי הפאות. <code dir="ltr">zoomTo 1.3</code> הוא זום מוחלט, ו-<code dir="ltr">zoom 4</code> מכפיל את הזום הנוכחי. <code dir="ltr">/vis/scene/add/axes 0 0 0 10 mm</code> מצייר צירים באורך 10 mm מהמקור: Geant4 צובע אותם באדום, בירוק ובכחול, וכאן הם בצבע הטקסט, כי באתר הצבעים האלה שמורים לחלקיקים.</p>
+  <div data-callout="intuition">
+    <p>הסצנה היא תפאורה על במה, ומערכת הציור היא סוג המצלמה: וידאו, סטילס או סורק. הצופה הוא מקום ישיבה באולם. אפשר לשבת במקום אחר בלי לבנות את התפאורה מחדש.</p>
+  </div>
+</section>
+
+<!-- 3. CYCLE: trajectory models and filters -->
+<section class="section wrap" data-section="model" id="model">
+  <div class="section-head"><span class="section-num">3</span><h2>צבעים, מסננים וצבירה</h2></div>
+  <p>הקווים בתמונה הם trajectories: הרשומה ש-Geant4 שומר לכל מסלול (track), עם נקודה בסוף כל צעד, כדי שיהיה מה לצייר. <code dir="ltr">/vis/scene/add/trajectories smooth</code> מוסיף אותם לסצנה, ו-smooth שומר גם נקודות ביניים, כך שמסלול מעוגל נראה חלק.</p>
+  <p>איך לצבוע אותם קובע מודל מסלולים (trajectory model). ב-vis.mac של ldns הוא <code dir="ltr">drawByParticleID</code>, עם צבע לכל חלקיק: פרוטון אדום, נייטרון ירוק, גמא צהוב ואלקטרון כחול. באירוע הסכמטי למטה פרוטון נעצר בדיסקה, מייצר נייטרון וגמא, והגמא מעיף אלקטרון אחד בדרך החוצה.</p>
+  <div id="pc-model">
+    <figure class="sim"><canvas id="c-model"></canvas><div class="sim-controls" id="ctl-model"></div></figure>
+  </div>
+  <p class="block-gap">כשהמאקרו לא יוצר מודל, Geant4 צובע לפי מטען בלבד, <code dir="ltr">drawByCharge</code>: בברירת המחדל כחול לחיובי, אדום לשלילי וירוק לניטרלי. אז הפרוטון כחול, האלקטרון אדום, והנייטרון והגמא באותו ירוק. בהנפשה שלוש הקבוצות מצוירות בלי צבעי החלקיקים, כי באתר הצבעים האלה שמורים לחלקיק עצמו. זו הסיבה ש-vis.mac בונה מודל משלו:</p>
+  <pre class="code" dir="ltr">/vis/modeling/trajectories/create/drawByParticleID
+/vis/modeling/trajectories/drawByParticleID-0/set proton red
+/vis/modeling/trajectories/drawByParticleID-0/set neutron green
+/vis/modeling/trajectories/drawByParticleID-0/set gamma yellow
+/vis/modeling/trajectories/drawByParticleID-0/set e- blue
+# show only protons and neutrons (comment out to see everything)
+/vis/filtering/trajectories/create/particleFilter
+/vis/filtering/trajectories/particleFilter-0/add proton
+/vis/filtering/trajectories/particleFilter-0/add neutron
+/vis/scene/endOfEventAction accumulate 200
+/vis/viewer/set/autoRefresh true</pre>
+  <p>מסנן (filter) מחליט אילו מסלולים יצוירו. <code dir="ltr">particleFilter-0/add</code> מוסיף חלקיק לרשימה, <code dir="ltr">reset</code> מרוקן אותה, ו-<code dir="ltr">active false</code> מכבה את המסנן. במצב הרגיל, soft, מסלול שנפסל עדיין נשלח למערכת הציור ומסומן כבלתי נראה. אחרי <code dir="ltr">/vis/filtering/trajectories/mode hard</code> הוא לא נשלח בכלל, וזה חוסך זיכרון כשצוברים הרבה אירועים.</p>
+  <p>וצבירה: <code dir="ltr">endOfEventAction accumulate 200</code> אומר לצבור בתמונה אחת את המסלולים של עד 200 אירועים. בלי השורה הזאת כל אירוע חדש מחליף את הקודם, ובסוף ריצה רואים רק את האחרון.</p>
+</section>
+
+<!-- 4. CYCLE: the window and the picture without a window -->
+<section class="section wrap" data-section="gui" id="gui">
+  <div class="section-head"><span class="section-num">4</span><h2>חלון, ותמונה בלי חלון</h2></div>
+  <p>הפקודה <code dir="ltr">./ldns -u vis_30J.mac</code> פותחת את החלון של Geant4 עם הממיר והמקור של 30 J: Be בעובי 4 mm, הספקטרום האמיתי, analog מ-0.5 MeV. בשורת הפקודה שבתחתית החלון מקלידים <code dir="ltr">/run/beamOn 300</code>, ואחר כך מסובבים את התמונה בגרירה ומקרבים בגלגלת.</p>
+  <div id="pc-gui">
+    <figure class="sim"><canvas id="c-gui"></canvas><div class="sim-controls" id="ctl-gui"></div></figure>
+  </div>
+  <p class="block-gap">גרירה בעכבר היא פקודת צופה, כמו <code dir="ltr">viewpointThetaPhi</code>: היא משנה רק את המקום של המצלמה. הסימולציה כבר נגמרה. Geant4 שומר את האירועים שצריך לציור, והצופה מצייר אותם שוב מכל כיוון חדש. אירועים חדשים יש רק אחרי <code dir="ltr">/run/beamOn</code> נוסף.</p>
+  <p>ובלי חלון בכלל: עם <code dir="ltr">-m</code> ldns לא פותח ממשק גרפי. אלה השורות ב-<code dir="ltr">ldns.cc</code>:</p>
+  <pre class="code" dir="ltr">  // GUI only when no macro is given (pass a clean argv to Qt)
+  G4UIExecutive* ui = nullptr;
+  if (macro.empty()) ui = new G4UIExecutive(1, argv);</pre>
+  <p>במקום חלון, <code dir="ltr">/vis/open TSG_OFFSCREEN 1600x1000</code> מצייר לזיכרון, ו-<code dir="ltr">/vis/tsg/export</code> כותב את הציור לקובץ. כך נוצרו שתי התמונות של הפרק, מ-<code dir="ltr">picture_30J.mac</code> עם <code dir="ltr">-t 1</code>: 300 אירועים לוקחים שניות גם בהליך אחד. זו התמונה הראשונה:</p>
+  <figure class="pic">
+    <img src="../assets/geometry_30J_Be4.png" loading="lazy" width="1600" height="1000" alt="תמונת Geant4 על רקע שחור: דיסקת Be בעובי 4 mm מצוירת כשלד כחול במבט אלכסוני מימין, ומהמקור משמאל יוצא קונוס של 300 קווים אדומים שנעצרים בדיסקה. בפינה השמאלית צירים קטנים באורך 1 cm. אין אף קו ירוק.">
+    <figcaption>300 פרוטונים מהספקטרום האמיתי, analog מ-0.5 MeV, על Be בעובי 4 mm. מבט <code dir="ltr">-1 0.35 -0.3</code>, שלד עם <code dir="ltr">auxiliaryEdge</code>, ומסנן של פרוטונים ונייטרונים. השכבה כחולה כי ldns צובע כל שכבה בצבע משלה. אין אף מסלול ירוק.</figcaption>
+  </figure>
+  <p>לתמונה השנייה אותו מאקרו מחליף מסנן ומקור, מריץ עוד 50000 אירועים ושומר שוב. שתי השורות שלפני הקטע מרוקנות את המסנן ומשאירות רק נייטרונים: <code dir="ltr">particleFilter-0/reset</code> ו-<code dir="ltr">particleFilter-0/add neutron</code>. אחריהן, מתוך <code dir="ltr">picture_30J.mac</code>:</p>
+  <pre class="code" dir="ltr">/vis/filtering/trajectories/mode hard
+/ldns/src/Emin 5 MeV
+/ldns/src/sampling flat
+/vis/scene/endOfEventAction accumulate 50000
+/run/beamOn 50000
+/vis/viewer/rebuild
+/vis/tsg/export zb_png results/neutrons_30J_Be4.png</pre>
+  <figure class="pic">
+    <img src="../assets/neutrons_30J_Be4.png" loading="lazy" width="1600" height="1000" alt="תמונת Geant4 על רקע שחור: אותה דיסקה כחולה, ומתוכה יוצאים לכל הכיוונים עשרות קווים ירוקים ישרים שחוצים את כל המסגרת. אין קווים אדומים.">
+    <figcaption>רק מסלולי נייטרונים, מ-50000 פרוטונים מעל 5 MeV בדגימה flat. כל הקווים יוצאים מהדיסקה וממשיכים ישר: לנייטרון אין מטען, ומחוץ לדיסקה יש רק ואקום.</figcaption>
+  </figure>
+</section>
+
+<!-- 5. CYCLE: the picture is not the result -->
+<section class="section wrap" data-section="notresult" id="notresult">
+  <div class="section-head"><span class="section-num">5</span><h2>התמונה איננה התוצאה</h2></div>
+  <p>התמונה השנייה מלאה בירוק. כמה נייטרונים זה לפרוטון? כדי לענות צריך לדעת איך היא נוצרה: מקור מוטה, דגימה flat עם משקלים, ומסנן. בסימולציה למטה אותו עיקרון על המקור של ריצת ה-Be, flat מ-1.85 MeV: למעלה התמונה, ולמטה הטבלה.</p>
+  <div id="pc-tally">
+    <figure class="sim"><canvas id="c-tally"></canvas><div class="sim-controls" id="ctl-tally"></div></figure>
+  </div>
+  <p class="block-gap">התמונה מציירת כל מסלול באותו קו, והטבלה סופרת כל נייטרון במשקל שלו. לכן המספרים באים מהטבלאות ומהסיכום בסוף הריצה (פרק 8), ואף פעם לא מספירת קווים. גם המאקרו של התמונות אומר את זה: <code dir="ltr">/ldns/out/level 0</code>, בלי טבלאות, כי הריצה הזאת לא בשביל מספרים.</p>
+  <p>ויש חלופה בטקסט, כשרוצים לדעת מה קרה באירוע מסוים: <code dir="ltr">/tracking/verbose 1</code> מדפיס כל צעד של כל חלקיק, עם המיקום, האנרגיה והתהליך. זה הרבה פלט, ולכן מריצים אותו עם <code dir="ltr">/run/beamOn 1</code> ועם <code dir="ltr">-t 1</code>, כך שאירוע אחד מודפס בסדר, בלי שורות של הליכים אחרים באמצע.</p>
+</section>
+
+<!-- 6. CYCLE: reading a picture -->
+<section class="section wrap" data-section="reading" id="reading">
+  <div class="section-head"><span class="section-num">6</span><h2>לקרוא תמונה</h2></div>
+  <p>אז בשביל מה תמונה? לבדוק שהגיאומטריה והקרן במקום: שהקונוס נכנס בדיסקה, שהקרן הולכת לכיוון הנכון, שהשכבות בסדר הנכון. בתמונה הראשונה הקווים האדומים יוצאים מהמקור בקונוס של \(20°\) ונכנסים לדיסקה, שהפאה הקדמית שלה ב-45 mm. בסימולציה, הדיסקה במבט מהצד, מוגדלת.</p>
+  <div id="pc-range">
+    <figure class="sim"><canvas id="c-range"></canvas><div class="sim-controls" id="ctl-range"></div></figure>
+  </div>
+  <p class="block-gap">פרוטון טעון מאבד אנרגיה ברציפות, ועוצר אחרי הטווח שלו: כ-1.3 mm ב-Be ל-13 MeV, ה-cut-off של הספקטרום, ופחות מעשירית המילימטר לרוב הפרוטונים, שמתחת ל-2 MeV. לכן ב-4 mm של Be שום פרוטון לא עובר, וכל הנייטרונים נולדים בשכבה הדקה שליד הפאה הקדמית. מה עוד קוראים בתמונות של הפרויקט:</p>
+  <ul class="read-list">
+    <li><b>הקונוס נכנס בדיסקה.</b> ב-45 mm הרדיוס שלו \(45\cdot\tan 20° = 16.4\) mm, והדיסקה ברדיוס 22 mm. אם קווים אדומים היו עוברים ליד הדיסקה, משהו בגיאומטריה או במקור לא נכון.</li>
+    <li><b>הקרן הולכת ל-+z.</b> הצירים הקטנים במקור מראים את הכיוונים. ב-<code dir="ltr">-1 0 0</code> הקרן משמאל לימין.</li>
+    <li><b>נייטרונים יוצאים לכל הכיוונים</b>, בקווים ישרים: אין להם מטען, ובחוץ יש ואקום. בריצת ה-Be 59% מהם יצאו קדימה, \(p_z > 0\), אבל את זה רואים בגרף של פרק 8, לא בעין.</li>
+    <li><b>גמא ואלקטרונים</b> לא מופיעים בשתי התמונות, כי המסנן לא מעביר אותם. <code dir="ltr">particleFilter-0/active false</code> מחזיר אותם.</li>
+    <li><b>הצבעים של השכבות</b> באים מ-ldns: השכבה הראשונה כחולה, ובתמונה עם כמה שכבות כל אחת בצבע אחר.</li>
+  </ul>
+</section>
+
+<!-- 7. COMMAND CARD -->
+<section class="section wrap" data-section="formula" data-passive id="formula">
+  <div class="section-head"><span class="section-num">7</span><h2>כרטיס הפקודות</h2></div>
+  <p>שתים עשרה הפקודות שהופיעו בפרק, לפי הסדר שבו מאקרו של תמונה משתמש בהן.</p>
+  <div class="formula-card">
+    <h3>פקודות הוויזואליזציה</h3>
+    <div class="cmd-list">
+      <div class="cmd-row"><div class="cmds" dir="ltr"><code dir="ltr">/vis/open</code><code dir="ltr">/vis/open TSG_OFFSCREEN 1600x1000</code></div><p>פותח מערכת ציור, מטפל וצופה: חלון, או ציור לזיכרון.</p></div>
+      <div class="cmd-row"><div class="cmds" dir="ltr"><code dir="ltr">/vis/drawVolume</code></div><p>מכניס את הגיאומטריה לסצנה.</p></div>
+      <div class="cmd-row"><div class="cmds" dir="ltr"><code dir="ltr">/vis/viewer/set/viewpointVector -1 0 0</code><code dir="ltr">viewpointThetaPhi 70 20 deg</code></div><p>כיוון המבט, מהמטרה אל המצלמה. ציר y למעלה.</p></div>
+      <div class="cmd-row"><div class="cmds" dir="ltr"><code dir="ltr">/vis/viewer/set/style wireframe</code><code dir="ltr">surface</code></div><p>שלד של קווים, או משטחים.</p></div>
+      <div class="cmd-row"><div class="cmds" dir="ltr"><code dir="ltr">/vis/viewer/set/auxiliaryEdge true</code></div><p>כל הקווים של הגליל, לא רק הפאות.</p></div>
+      <div class="cmd-row"><div class="cmds" dir="ltr"><code dir="ltr">/vis/viewer/zoomTo 1.3</code></div><p>זום מוחלט. <code dir="ltr">zoom</code> מכפיל את הנוכחי.</p></div>
+      <div class="cmd-row"><div class="cmds" dir="ltr"><code dir="ltr">/vis/scene/add/axes 0 0 0 10 mm</code></div><p>צירים באורך 10 mm מהמקור.</p></div>
+      <div class="cmd-row"><div class="cmds" dir="ltr"><code dir="ltr">/vis/scene/add/trajectories smooth</code></div><p>המסלולים של האירועים נכנסים לסצנה.</p></div>
+      <div class="cmd-row"><div class="cmds" dir="ltr"><code dir="ltr">/vis/modeling/trajectories/create/drawByParticleID</code><code dir="ltr">drawByParticleID-0/set proton red</code></div><p>צבע לכל חלקיק. בלי מודל: <code dir="ltr">drawByCharge</code>.</p></div>
+      <div class="cmd-row"><div class="cmds" dir="ltr"><code dir="ltr">/vis/filtering/trajectories/create/particleFilter</code><code dir="ltr">particleFilter-0/add neutron</code><code dir="ltr">/vis/filtering/trajectories/mode hard</code></div><p>מסנן: רק החלקיקים ברשימה מצוירים. <code dir="ltr">reset</code> מרוקן את הרשימה, ו-<code dir="ltr">mode hard</code> לא שולח את מה שנפסל למערכת הציור, וחוסך זיכרון.</p></div>
+      <div class="cmd-row"><div class="cmds" dir="ltr"><code dir="ltr">/vis/scene/endOfEventAction accumulate N</code></div><p>צובר בתמונה אחת את המסלולים של עד N אירועים. בלעדיה כל אירוע מחליף את הקודם.</p></div>
+      <div class="cmd-row"><div class="cmds" dir="ltr"><code dir="ltr">/vis/tsg/export zb_png f.png</code></div><p>שומר את מה שהצופה מצייר כקובץ PNG, בלי חלון, אחרי <code dir="ltr">/vis/open TSG_OFFSCREEN</code>.</p></div>
+    </div>
+    <p class="not-say"><b>מה הכרטיס לא אומר:</b> כמה נייטרונים יש. מספר הקווים תלוי במקור, בדגימה ובמסנן שבחרנו בשביל התמונה. <code dir="ltr">autoRefresh false</code> בהתחלה ו-<code dir="ltr">true</code> בסוף רק חוסכים ציורים באמצע המאקרו, ו-<code dir="ltr">/vis/viewer/rebuild</code> מצייר מחדש לפני השמירה.</p>
+  </div>
+  <div data-callout="lab">
+    <p>המספרים מאחורי התמונות של הפרק:</p>
+    <table class="lab-table">
+      <tbody>
+        <tr><th>ממיר בתמונות</th><td class="v">Be 4 mm, r = 22 mm, z = 45 mm</td></tr>
+        <tr><th>נייטרונים לפרוטון, התערובת מ-0.5 MeV</th><td class="v">1.97e8 / 1.28e12 = 1.54e-4</td></tr>
+        <tr><th>מסלולי נייטרונים לפרוטון, flat מ-1.85 MeV</th><td class="v">6126 / 3e6 = 2.04e-3</td></tr>
+        <tr><th>משקל ממוצע של שורה ב-leak</th><td class="v">0.219</td></tr>
+        <tr><th>נייטרונים לפרוטון מעל 1.85 MeV</th><td class="v">4.47e-4</td></tr>
+        <tr><th>טווח של פרוטון 13 MeV ב-Be</th><td class="v">≈ 1.3 mm</td></tr>
+        <tr><th>רדיוס הקונוס בפאה הקדמית</th><td class="v">16.4 mm</td></tr>
+      </tbody>
+    </table>
+    <p class="small muted">השורות 6126 והמשקל 0.219 הם של ריצת ה-Be בעובי 2 mm. מעבר לטווח של הפרוטונים העובי כמעט לא משנה את מספר הנייטרונים.</p>
+  </div>
+</section>
+
+<!-- 8. PLAYGROUND -->
+<section class="section wrap-wide" data-section="playground" id="playground">
+  <div class="section-head"><span class="section-num">8</span><h2>מעבדת הצפייה</h2></div>
+  <p>צופה שלם: נקודת מבט, זום, סגנון, קווי עזר, צירים, מקור, מסנן ומודל צבעים, וכפתור שמריץ אירועים ומוסיף אותם לתמונה. מתחת לסימולציה, המאקרו שנותן את התמונה הזאת. כמה דברים שכדאי לנסות:</p>
+  <ul class="quest-list">
+    <li>להגיע למבט מהצד שבו הקרן משמאל לימין, ולמצוא את θ ואת φ שלו.</li>
+    <li>להשאיר רק נייטרונים, להריץ כמה אלפי אירועים מהתערובת האמיתית, ואז את אותו מספר עם flat מ-1.85 MeV.</li>
+    <li>לעבור ל-<code dir="ltr">drawByCharge</code>: מה עוד אפשר להבדיל בין פרוטון לנייטרון?</li>
+    <li>לסובב את המבט עד θ = 0: לאן נעלם הקונוס?</li>
+  </ul>
+  <figure class="sim block-gap"><canvas id="c-lab"></canvas><div class="sim-controls" id="ctl-lab"></div></figure>
+</section>
+
+<!-- 9. GAME -->
+<section class="section wrap-wide" data-section="game" id="game">
+  <div class="section-head"><span class="section-num">9</span><h2>אתגר: לשחזר את התמונה</h2></div>
+  <p>למעלה תמונת מטרה של אותה ריצה, ולמטה הצופה שלנו. מכוונים את הצופה עד שהתמונות זהות: בשלב הראשון רק כיוון המבט, בשני גם הסגנון, ובשלישי גם קווי העזר והמסנן.</p>
+  <p class="muted small">בדיקה ראשונה שמצליחה שווה 3 נקודות, שנייה 2, ואחר כך 1. המטרות משתנות בכל סיבוב.</p>
+  <figure class="sim"><canvas id="c-game"></canvas><div class="sim-controls" id="ctl-game"></div></figure>
+</section>
+
+<!-- 10. TRAPS -->
+<section class="section wrap" data-section="traps" id="traps">
+  <div class="section-head"><span class="section-num">10</span><h2>מלכודות</h2></div>
+  <p>ארבע טעויות שקורות מול החלון. שתיים מהן עולות זיכרון או זמן, ושתיים עולות מסקנה לא נכונה.</p>
+  <div id="pc-trap1">
+    <figure class="sim"><canvas id="c-trap1"></canvas><div class="sim-controls" id="ctl-trap1"></div></figure>
+  </div>
+  <div id="pc-trap2">
+    <figure class="sim"><canvas id="c-trap2"></canvas><div class="sim-controls" id="ctl-trap2"></div></figure>
+  </div>
+  <div id="pc-trap3">
+    <figure class="sim"><canvas id="c-trap3"></canvas><div class="sim-controls" id="ctl-trap3"></div></figure>
+  </div>
+  <div id="pc-trap4">
+    <figure class="sim"><div id="t-trap4"></div><div class="sim-controls" id="ctl-trap4"></div></figure>
+  </div>
+</section>
+
+<!-- 11. PROBLEMS -->
+<section class="section wrap" data-section="problems" id="problems">
+  <div class="section-head"><span class="section-num">11</span><h2>תרגילים</h2></div>
+  <p>חמש שאלות שכדאי לפתור לפני שפותחים את החלון. כדאי לנסות לבד, ולפתוח רמז רק כשנתקעים.</p>
+  <div id="problems-host"></div>
+</section>
+
+<!-- 12. QUIZ -->
+<section class="section wrap" data-section="quiz" id="quiz">
+  <div class="section-head"><span class="section-num">12</span><h2>בוחן</h2></div>
+  <p>חמש שאלות על הפרק ועוד שתיים לחזרה מפרקים 1 ו-2. הציון הטוב ביותר נשמר, ואפשר לנסות שוב כמה פעמים שרוצים.</p>
+  <div id="quiz-host" class="block-gap"></div>
+</section>
+
+<!-- 13. POCKET CARD -->
+<section class="section wrap" data-section="pocket" data-passive id="pocket">
+  <div class="section-head"><span class="section-num">13</span><h2>כרטיס כיס</h2></div>
+  <div class="pocket">
+    <h3>ויזואליזציה על כף היד</h3>
+    <div class="pocket-grid">
+      <div class="pocket-item"><b>שלושה חלקים:</b> סצנה (מה מציירים), מערכת ציור עם מטפל סצנה (OGL, Qt, TSG, <code dir="ltr">TSG_OFFSCREEN</code>, <code dir="ltr">VRML2FILE</code>, <code dir="ltr">HepRepFile</code>), צופה (מאיפה ואיך).</div>
+      <div class="pocket-item"><b>מבט:</b> <code dir="ltr">viewpointVector -1 0 0</code> מהצד, הקרן משמאל לימין. <code dir="ltr">viewpointThetaPhi θ φ deg</code>: הווקטור \((\sin\theta\cos\varphi, \sin\theta\sin\varphi, \cos\theta)\). ציר y למעלה.</div>
+      <div class="pocket-item"><b>סגנון:</b> <code dir="ltr">wireframe</code> רואה פנימה, <code dir="ltr">surface</code> גוף מלא, <code dir="ltr">auxiliaryEdge true</code> כל קווי הגליל.</div>
+      <div class="pocket-item"><b>צבעים:</b> <code dir="ltr">drawByParticleID</code> עם <code dir="ltr">set proton red</code> וכו'. בלי מודל: <code dir="ltr">drawByCharge</code>, ונייטרון וגמא באותו צבע.</div>
+      <div class="pocket-item"><b>מסנן:</b> <code dir="ltr">particleFilter-0/add neutron</code>, <code dir="ltr">reset</code>, <code dir="ltr">active false</code>; <code dir="ltr">mode hard</code> חוסך זיכרון. צבירה: <code dir="ltr">endOfEventAction accumulate N</code>.</div>
+      <div class="pocket-item"><b>בלי חלון:</b> <code dir="ltr">./ldns -m pic.mac -t 1</code> עם <code dir="ltr">/vis/open TSG_OFFSCREEN 1600x1000</code> ו-<code dir="ltr">/vis/tsg/export zb_png f.png</code>.</div>
+      <div class="pocket-item"><b>כמה ירוק:</b> בתערובת האמיתית מ-0.5 MeV נייטרון אחד לכל 6500 פרוטונים בערך; בתמונה צריך מקור מוטה, ורק בתמונה.</div>
+      <div class="pocket-item"><b>במקום תמונה:</b> <code dir="ltr">/tracking/verbose 1</code> עם <code dir="ltr">/run/beamOn 1</code> ו-<code dir="ltr">-t 1</code>. ובשביל מספרים: הטבלאות.</div>
+    </div>
+    <div class="pocket-quote">"התמונה בודקת שהגיאומטריה והקרן במקום. את המספרים סופרת הטבלה."</div>
+  </div>
+</section>
+
+</main>
+
+<div data-chapter-nav></div>
+<footer data-footer></footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/contrib/auto-render.min.js"></script>
+<script src="../js/core/fmt.js"></script>
+<script src="../js/core/vec.js"></script>
+<script src="../js/core/complex.js"></script>
+<script src="../js/core/fft.js"></script>
+<script src="../js/core/pulse.js"></script>
+<script src="../js/core/plot.js"></script>
+<script src="../js/core/progress.js"></script>
+<script src="../js/core/canvas.js"></script>
+<script src="../js/core/loop.js"></script>
+<script src="../js/core/coach.js"></script>
+<script src="../js/core/ui.js"></script>
+<script src="../js/sims/ch07/kit.js"></script>
+<script src="../js/sims/ch07/vis-viewer.js"></script>
+<script src="../js/sims/ch07/vis-count.js"></script>
+<script src="../js/sims/ch07/vis-model.js"></script>
+<script src="../js/sims/ch07/vis-tally.js"></script>
+<script src="../js/sims/ch07/vis-range.js"></script>
+<script src="../js/sims/ch07/vis-offscreen.js"></script>
+<script src="../js/sims/ch07/vis-game.js"></script>
+<script>
+(function () {
+  'use strict';
+  const CH = '07';
+  const U = PHY.ui;
+  const $ = (id) => document.getElementById(id);
+  const TAG = 'הניחוש שלנו';
+
+  /* ---------- 1. Hook: 10000 protons, only neutrons drawn ---------- */
+  const hook = PHY.sims.visCount($('c-hook'), $('ctl-hook'), { mode: 'hook', N: 10000, seed: 5, chapter: CH, section: 'hook' });
+  U.PredictCard($('pc-hook'), {
+    chapter: CH, id: 'hook', section: 'hook', tag: TAG,
+    question: `10000 פרוטונים מהספקטרום האמיתי, analog מ-0.5 MeV, על Be, עם מסנן שמצייר רק נייטרונים. כמה מסלולים ירוקים יופיעו?`,
+    options: [
+      { text: `בערך 10000: כל פרוטון שנעצר בבריליום מוציא נייטרון.`, why: `רוב הפרוטונים בספקטרום הזה מתחת ל-2 MeV, מתחת לסף של ⁹Be(p,n). הם נעצרים בלי שום תגובה גרעינית, ורק מעטים מאוד מהאחרים מייצרים נייטרון.` },
+      { text: `בערך 100: אחוז אחד, כמו בממיר טוב.`, why: `אחוז אחד היה ממיר מצוין במיוחד. כאן התפוקה לפרוטון היא \\(1.54\\times10^{-4}\\), פי 65 פחות.` },
+      { text: `אחד או שניים.`, correct: true },
+      { text: `אף אחד: המסנן הסתיר גם את הנייטרונים.`, why: `המסנן מעביר רק נייטרונים, ולכן כל נייטרון שנולד מצויר. אפס יכול לצאת, אבל במקרה, בערך פעם בחמש ריצות.` },
+    ],
+    onRun: () => hook.play(4.5),
+    steps: [
+      { hint: `כמה נייטרונים יוצאים בירייה אחת, וכמה פרוטונים יש בה מעל 0.5 MeV?`,
+        work: `\\(1.97\\times10^{8}\\) נייטרונים מ-\\(1.28\\times10^{12}\\) פרוטונים: \\(1.97\\times10^{8}/1.28\\times10^{12} = 1.54\\times10^{-4}\\) נייטרונים לפרוטון, בערך אחד לכל 6500.` },
+      { hint: `כמה מסלולים ירוקים צפויים ב-10000 פרוטונים?`,
+        work: `\\(10^{4}\\cdot 1.54\\times10^{-4} = 1.54\\) בממוצע.` },
+      { hint: `ומה הפיזור סביב הממוצע הזה?`,
+        work: `ספירה של אירועים נדירים: פואסון (פרק 1). עם תוחלת 1.54 הסיכוי לאפס הוא \\(e^{-1.54} = 21\\%\\), ורוב הפעמים יוצאים 1, 2 או 3. התשובה: אחד או שניים.` },
+    ],
+    explanation: `<p>הבורר פתוח: מה יוצא מאותם 10000 פרוטונים עם המקור של ריצת ה-Be, flat מ-1.85 MeV?</p>`,
+    sayRight: 'נכון. אחד או שניים, ולפעמים אף אחד.',
+    sayWrong: 'גם אני ציפיתי לענן ירוק בפעם הראשונה. הספקטרום רך מדי.',
+  });
+
+  /* ---------- 2. Viewpoint ---------- */
+  const scene = PHY.sims.visViewer($('c-scene'), $('ctl-scene'), { mode: 'view', theta: 70, phi: 20, zoom: 1.3, style: 'wireframe', aux: true, events: 120, seed: 4, locked: true, chapter: CH, section: 'scene' });
+  U.PredictCard($('pc-scene'), {
+    chapter: CH, id: 'scene', section: 'scene', tag: TAG,
+    question: `רוצים מבט מהצד, שבו הקרן זורמת משמאל לימין. איזה <code dir="ltr">/vis/viewer/set/viewpointVector</code>?`,
+    options: [
+      { text: `<code dir="ltr">0 0 -1</code>: מאחורי המקור, לאורך הקרן.`, why: `כך רואים את הדיסקה מלפנים, כעיגול, והקונוס מתכווץ לנקודה. הקרן הולכת לתוך המסך, לא משמאל לימין.` },
+      { text: `<code dir="ltr">1 0 0</code>: מהצד של x.`, why: `זה באמת מבט מהצד, אבל מהצד השני: המצלמה ב-+x מסתכלת לכיוון -x, ו-+z יוצא שמאלה. הקרן זורמת מימין לשמאל.` },
+      { text: `<code dir="ltr">-1 0 0</code>.`, correct: true },
+    ],
+    onRun: () => scene.play(6),
+    steps: [
+      { hint: `מה הווקטור אומר: מאיפה מסתכלים, או לאן?`,
+        work: `מאיפה: הכיוון מהמטרה אל המצלמה. <code dir="ltr">-1 0 0</code> שם את המצלמה בצד של x השלילי, והיא מסתכלת לכיוון +x.` },
+      { hint: `ציר y למעלה. לאן יוצא +z על המסך?`,
+        work: `הכיוון ימינה במסך הוא \\(\\hat y\\times\\hat v\\). עם \\(\\hat v = (-1,0,0)\\): \\((0,1,0)\\times(-1,0,0) = (0,0,1)\\), כלומר +z ימינה.` },
+      { hint: `ומה עם <code dir="ltr">1 0 0</code>?`,
+        work: `\\((0,1,0)\\times(1,0,0) = (0,0,-1)\\): +z שמאלה, והקרן מימין לשמאל. התשובה: <code dir="ltr">-1 0 0</code>.` },
+    ],
+    explanation: `<p>הסליידרים של θ ושל φ פתוחים. איזה θ ואיזה φ נותנים את אותו מבט כמו <code dir="ltr">-1 0 0</code>?</p>`,
+    sayRight: 'נכון. המצלמה ב-x השלילי, והקרן ימינה.',
+    sayWrong: 'גם אני התבלבלתי בין מאיפה ולאן. הווקטור מצביע אל המצלמה.',
+  });
+
+  /* ---------- 3. Trajectory model ---------- */
+  const model = PHY.sims.visModel($('c-model'), $('ctl-model'), { chapter: CH, section: 'model' });
+  U.PredictCard($('pc-model'), {
+    chapter: CH, id: 'model', section: 'model', tag: TAG,
+    question: `מוחקים מ-vis.mac את חמש השורות של <code dir="ltr">drawByParticleID</code>. מה יקרה לצבעים של הנייטרון ושל הגמא?`,
+    options: [
+      { text: `כלום: ירוק וצהוב. אלה הצבעים של Geant4 לחלקיקים האלה.`, why: `הצבעים האלה לא באים מ-Geant4, אלא מחמש השורות שמחקנו. בלי מודל, Geant4 לא יודע איזה חלקיק זה, רק איזה מטען יש לו.` },
+      { text: `אותו צבע לשניהם: שניהם ניטרליים.`, correct: true },
+      { text: `הם לא יצוירו: בלי מודל מציירים רק חלקיקים טעונים.`, why: `בלי מודל Geant4 עדיין מצייר את כל המסלולים, במודל ברירת המחדל. מה שקובע אילו מסלולים יצוירו הוא המסנן, לא המודל.` },
+    ],
+    onRun: () => model.play(3.5),
+    steps: [
+      { hint: `מה Geant4 עושה כשאין שום מודל מסלולים?`,
+        work: `הוא יוצר מודל ברירת מחדל, <code dir="ltr">drawByCharge</code>, שצובע לפי המטען של החלקיק בלבד.` },
+      { hint: `מה המטען של הנייטרון ושל הגמא?`,
+        work: `אפס לשניהם. ב-<code dir="ltr">drawByCharge</code> הם באותה קבוצה, ולכן באותו צבע.` },
+      { hint: `ומה עם הפרוטון והאלקטרון?`,
+        work: `מטען חיובי ושלילי: שני צבעים אחרים. התשובה: הנייטרון והגמא באותו צבע, ואי אפשר להבדיל ביניהם בעין.` },
+    ],
+    explanation: `<p>הבורר מחליף בין שני המודלים, והמתג מוסיף מסנן של פרוטונים ונייטרונים בלבד. מה המסנן עושה לגמא ולאלקטרון?</p>`,
+    sayRight: 'נכון. בלי מודל, נייטרון וגמא נראים אותו דבר.',
+    sayWrong: 'גם אני חשבתי שהירוק שייך לנייטרון. הוא שייך לחמש השורות.',
+  });
+
+  /* ---------- 4. Rotating after the run ---------- */
+  const gui = PHY.sims.visViewer($('c-gui'), $('ctl-gui'), { mode: 'rotate', vec: null, theta: 72, phi: -160, zoom: 1.3, style: 'wireframe', aux: true, events: 300, seed: 9, locked: true, chapter: CH, section: 'gui' });
+  U.PredictCard($('pc-gui'), {
+    chapter: CH, id: 'gui', section: 'gui', tag: TAG,
+    question: `אחרי <code dir="ltr">/run/beamOn 300</code> בחלון, גוררים בעכבר ומסובבים את התמונה. מה Geant4 עושה בזמן הסיבוב?`,
+    options: [
+      { text: `מריץ את 300 האירועים מחדש, כדי לצייר אותם מהכיוון החדש.`, why: `הסימולציה כבר נגמרה, ואין סיבה להריץ אותה שוב: המסלולים לא תלויים בכיוון שממנו מסתכלים. אירועים חדשים יש רק אחרי <code dir="ltr">/run/beamOn</code> נוסף.` },
+      { text: `מצייר שוב את אותם 300 אירועים מכיוון אחר.`, correct: true },
+      { text: `מוחק את המסלולים: אחרי סיבוב נשארת רק הגיאומטריה.`, why: `Geant4 שומר את האירועים שצריך לציור, בדיוק כדי שאפשר יהיה לצייר אותם שוב אחרי שינוי בצופה.` },
+    ],
+    onRun: () => gui.play(5),
+    steps: [
+      { hint: `מה גרירה בעכבר משנה: את הסצנה, או את הצופה?`,
+        work: `את הצופה: את נקודת המבט, כמו <code dir="ltr">viewpointThetaPhi</code>. הסצנה, עם הגיאומטריה והמסלולים, לא משתנה.` },
+      { hint: `מאיפה הצופה לוקח את המסלולים כדי לצייר שוב?`,
+        work: `מהאירועים ש-Geant4 שמר לציור בסוף הריצה. בהנפשה מספר האירועים שהורצו נשאר 300, ורק מספר הציורים עולה.` },
+      { hint: `אז מה קורה?`,
+        work: `אותם 300 אירועים, אותם קווים, מצוירים מכל כיוון חדש. התשובה: מצייר שוב, לא מריץ שוב.` },
+    ],
+    explanation: `<p>אפשר להמשיך לסובב עם הסליידרים: כל תנועה היא ציור חדש של אותם אירועים.</p>`,
+    sayRight: 'נכון. הצופה מצייר שוב, הסימולציה לא רצה שוב.',
+    sayWrong: 'גם אני חיכיתי שהסיבוב ייקח זמן. הוא רק ציור.',
+  });
+
+  /* ---------- 5. The picture is not the result ---------- */
+  const tally = PHY.sims.visTally($('c-tally'), $('ctl-tally'), { N: 150000, seed: 5, chapter: CH, section: 'notresult' });
+  U.PredictCard($('pc-tally'), {
+    chapter: CH, id: 'tally', section: 'notresult', tag: TAG,
+    question: `150000 פרוטונים בדגימה flat מ-1.85 MeV, ובתמונה כ-300 מסלולי נייטרונים. מה התפוקה של הממיר, בנייטרונים לפרוטון?`,
+    options: [
+      { text: `\\(2\\times10^{-3}\\): 300 מסלולים חלקי 150000 פרוטונים.`, why: `החילוק נכון, אבל הוא סופר קווים. בדגימה flat יורים הרבה יותר פרוטונים אנרגטיים מבספקטרום האמיתי, וכל נייטרון מהם שווה רק את המשקל שלו, בממוצע 0.219.` },
+      { text: `\\(4.47\\times10^{-4}\\): את התפוקה נותן סכום המשקלים, לא מספר הקווים.`, correct: true },
+      { text: `אי אפשר לדעת מסימולציה: רק מדידה אומרת כמה.`, why: `הסימולציה כן אומרת, עם שגיאה: \\(4.47\\times10^{-4} \\pm 0.09\\times10^{-4}\\) בריצת ה-Be. רק שהיא אומרת את זה בטבלה ובסיכום, לא בתמונה.` },
+    ],
+    onRun: () => tally.play(4.5),
+    steps: [
+      { hint: `מה דגימה flat עושה לאנרגיות של הפרוטונים שנורים?`,
+        work: `היא יורה באותה צפיפות בכל אנרגיה בין 1.85 ל-13 MeV, ולכן הרבה יותר פרוטונים אנרגטיים מבספקטרום האמיתי. משקל מתקן את זה: בזנב האנרגטי הוא קטן מ-1 (פרק 5).` },
+      { hint: `איך סופרים נייטרון שיש לו משקל?`,
+        work: `כל נייטרון נספר כמשקל שלו. בריצת ה-Be יצאו 6126 שורות מ-\\(3\\times10^{6}\\) פרוטונים: \\(2.04\\times10^{-3}\\) קווים לפרוטון. עם המשקל הממוצע 0.219: \\(6126\\cdot 0.219/3\\times10^{6} = 4.47\\times10^{-4}\\) נייטרונים לפרוטון.` },
+      { hint: `ומה עם 300 הקווים בתמונה?`,
+        work: `\\(300/150000 = 2\\times10^{-3}\\): בערך פי 4.6 יותר מהתוצאה, אחד חלקי המשקל הממוצע 0.219, כי התמונה לא יודעת על משקלים. התשובה: \\(4.47\\times10^{-4}\\), מסכום המשקלים.` },
+    ],
+    explanation: `<p>אפשר להריץ שוב עם זרע אחר. כמה משתנה מספר הקווים, וכמה התפוקה מהמשקלים?</p>`,
+    sayRight: 'נכון. סופרים משקלים, לא קווים.',
+    sayWrong: 'גם אני ספרתי קווים בפעם הראשונה. המשקלים משנים הכול.',
+  });
+
+  /* ---------- 6. Reading a picture: where the protons stop ---------- */
+  const range = PHY.sims.visRange($('c-range'), $('ctl-range'), { N: 300, seed: 3, chapter: CH, section: 'reading' });
+  U.PredictCard($('pc-range'), {
+    chapter: CH, id: 'range', section: 'reading', tag: TAG,
+    question: `בתמונה הראשונה הקווים האדומים נכנסים לדיסקת Be בעובי 4 mm. איפה הם נגמרים?`,
+    options: [
+      { text: `הם חוצים את הדיסקה וממשיכים מאחוריה: 4 mm זה דק.`, why: `4 mm דק לנייטרון, לא לפרוטון. פרוטון טעון מאבד אנרגיה ברציפות, ובבריליום גם פרוטון של 13 MeV עוצר בפחות מ-1.5 mm.` },
+      { text: `בתוך הדיסקה, במילימטר וחצי הראשונים.`, correct: true },
+      { text: `על הפאה הקדמית: פרוטונים לא נכנסים לחומר מוצק.`, why: `הם נכנסים, ועוצרים אחרי הטווח שלהם. לפרוטונים הרכים הטווח קצר מאוד, ולכן בתמונה הם נראים כאילו נעצרים על הפאה.` },
+    ],
+    onRun: () => range.play(3.5),
+    steps: [
+      { hint: `מה עוצר פרוטון בחומר?`,
+        work: `איבוד אנרגיה רציף ביינון, צעד אחרי צעד, עד שלא נשארת אנרגיה. המרחק שהוא עובר נקרא הטווח שלו.` },
+      { hint: `מה הטווח של הפרוטון האנרגטי ביותר בספקטרום?`,
+        work: `ה-cut-off הוא 13 MeV, והטווח שלו ב-Be הוא כ-1.3 mm. כל פרוטון אחר עוצר מוקדם יותר: הטווח גדל בערך כמו \\(E^{1.75}\\).` },
+      { hint: `ומה זה אומר על 4 mm?`,
+        work: `שום פרוטון לא מגיע לפאה האחורית, וכל הנייטרונים נולדים ב-1.3 mm הראשונים. התשובה: בתוך הדיסקה, במילימטר וחצי הראשונים.` },
+    ],
+    explanation: `<p>הבורר מחליף למקור flat מ-1.85 MeV, עם יותר פרוטונים אנרגטיים. עד איפה מגיע העמוק ביותר?</p>`,
+    sayRight: 'נכון. כולם עוצרים במילימטר וחצי הראשונים.',
+    sayWrong: 'גם אני חשבתי ש-4 mm זה דק. לפרוטון זה קיר.',
+  });
+
+  /* ---------- 8. Playground ---------- */
+  PHY.sims.visViewer($('c-lab'), $('ctl-lab'), { mode: 'lab', theta: 70, phi: 20, zoom: 1.3, style: 'wireframe', aux: true, seed: 21, filter: new Set(['proton', 'neutron']), chapter: CH, section: 'playground' });
+
+  /* ---------- 9. Game ---------- */
+  PHY.sims.visGame($('c-game'), $('ctl-game'), { chapter: CH, section: 'game' });
+
+  /* ---------- 10. Traps ---------- */
+  const trapDone = {};
+  const trapFinished = (name) => {
+    trapDone[name] = true;
+    if (trapDone.a && trapDone.b && trapDone.c && trapDone.d) PHY.progress.markSection(CH, 'traps');
+  };
+
+  const t1 = PHY.sims.visCount($('c-trap1'), $('ctl-trap1'), { mode: 'memory', N: 50000, src: 'flat', seed: 13 });
+  U.PredictCard($('pc-trap1'), {
+    chapter: CH, id: 'trap1', tag: 'מלכודת 1: עוד אירועים, תמונה טובה יותר',
+    question: `בתמונה השנייה נצברו 50000 אירועים, והמסנן מעביר רק נייטרונים. למה <code dir="ltr">picture_30J.mac</code> מוסיף גם <code dir="ltr">/vis/filtering/trajectories/mode hard</code>?`,
+    options: [
+      { text: `כדי שהקווים יהיו חדים יותר בתמונה.`, why: `המצב של המסנן לא משנה איך קו מצויר. התמונה זהה בשני המצבים: אותם קווים ירוקים.` },
+      { text: `כדי ש-Geant4 יסמלץ רק נייטרונים, וירוץ מהר יותר.`, why: `מסנן של ויזואליזציה לא נוגע בפיזיקה: כל הפרוטונים עדיין מועברים בחומר, וכל תגובה עדיין מוגרלת. הוא רק מחליט מה מצויר.` },
+      { text: `בלי זה כל מסלול שנפסל, כל פרוטון, עדיין נשמר בשביל הציור: לפחות 50000 מסלולים במקום כ-100.`, correct: true },
+    ],
+    onRun: () => t1.play(4.5),
+    steps: [
+      { hint: `כמה מסלולים יש ב-50000 אירועים?`,
+        work: `לפחות אחד בכל אירוע, הפרוטון עצמו: לפחות 50000. נייטרונים יש רק בחלק קטן מהאירועים.` },
+      { hint: `מה המסנן עושה עם מסלול שלא עבר, במצב soft?`,
+        work: `שולח אותו למערכת הציור ומסמן אותו כבלתי נראה. הוא לא מצויר, אבל נשמר שם.` },
+      { hint: `ובמצב hard?`,
+        work: `מסלול שלא עבר לא נשלח בכלל, ונשמרים רק המסלולים שמצוירים. התשובה: hard חוסך את כל המסלולים של הפרוטונים, וזה חשוב כשצוברים עשרות אלפי אירועים.` },
+    ],
+    onDone: () => trapFinished('a'),
+    sayRight: 'נכון. אותה תמונה, הרבה פחות זיכרון.',
+    sayWrong: 'גם אני חשבתי שמסנן רק מסתיר. ב-soft הוא באמת רק מסתיר.',
+  });
+
+  const t2 = PHY.sims.visCount($('c-trap2'), $('ctl-trap2'), { mode: 'zero', N: 300, src: 'analog', seed: 2 });
+  U.PredictCard($('pc-trap2'), {
+    chapter: CH, id: 'trap2', tag: 'מלכודת 2: התמונה היא התוצאה',
+    question: `בתמונה הראשונה, 300 פרוטונים מהתערובת האמיתית עם מסנן של פרוטונים ונייטרונים, אין אף קו ירוק. מה זה אומר על Be בעובי 4 mm?`,
+    options: [
+      { text: `שהוא לא מייצר נייטרונים מהספקטרום הזה.`, why: `הממיר מייצר \\(1.97\\times10^{8}\\) נייטרונים לירייה. ב-300 פרוטונים מהתערובת האמיתית צפויים רק \\(300\\cdot 1.54\\times10^{-4} = 0.05\\) נייטרונים, כך שאפס הוא הצפוי.` },
+      { text: `כלום על התפוקה: ב-300 פרוטונים צפויים רק 0.05 נייטרונים.`, correct: true },
+      { text: `שהמסנן הסתיר את הנייטרונים.`, why: `המסנן מעביר פרוטונים ונייטרונים. אילו נולד נייטרון, הוא היה מצויר.` },
+    ],
+    onRun: () => t2.play(3),
+    steps: [
+      { hint: `כמה נייטרונים צפויים מ-300 פרוטונים של התערובת האמיתית?`,
+        work: `\\(300\\cdot 1.54\\times10^{-4} = 0.046\\).` },
+      { hint: `מה הסיכוי לראות לפחות אחד?`,
+        work: `\\(1 - e^{-0.046} = 4.5\\%\\): בערך תמונה אחת מכל 20.` },
+      { hint: `אז מה התמונה אומרת?`,
+        work: `שאפס הוא מה שצפוי, ולכן הוא לא אומר כלום על התפוקה. את התפוקה, \\(4.47\\times10^{-4}\\) לפרוטון מעל 1.85 MeV, נותנת הטבלה. התשובה: כלום על התפוקה.` },
+    ],
+    onDone: () => trapFinished('b'),
+    sayRight: 'נכון. תמונה ריקה מירוק היא בדיוק מה שצפוי.',
+    sayWrong: 'גם אני נבהלתי מהתמונה הזאת. הספירה צפויה להיות אפס.',
+  });
+
+  const t3 = PHY.sims.visViewer($('c-trap3'), $('ctl-trap3'), { mode: 'style', vec: [-1, 0.35, -0.3], zoom: 1.3, style: 'surface', aux: false, events: 200, seed: 6, locked: true });
+  U.PredictCard($('pc-trap3'), {
+    chapter: CH, id: 'trap3', tag: 'מלכודת 3: wireframe מעלים את הגיאומטריה',
+    question: `עוברים מ-<code dir="ltr">style surface</code> ל-<code dir="ltr">style wireframe</code>. מה נשאר מהדיסקה?`,
+    options: [
+      { text: `כלום: wireframe מצייר רק את המסלולים.`, why: `wireframe הוא שלד של הגיאומטריה, לא היעדר שלה. מה שנעלם הוא המילוי של המשטחים.` },
+      { text: `הקווים שלה: שתי הפאות, ועם <code dir="ltr">auxiliaryEdge</code> כל קווי הגליל. ומה שבתוכה נראה.`, correct: true },
+      { text: `אותה דיסקה מלאה, רק בצבע בהיר יותר.`, why: `המשטחים לא נצבעים בכלל ב-wireframe. בגלל זה <code dir="ltr">template_picture.mac</code> אומר "wireframe (see inside)".` },
+    ],
+    onRun: () => t3.play(6),
+    steps: [
+      { hint: `ממה בנוי גליל ב-Geant4 כשמציירים אותו?`,
+        work: `ממצולעים: שתי פאות וקירות צד. surface ממלא אותם, ו-wireframe מצייר רק את הקווים שביניהם.` },
+      { hint: `אילו קווים רואים ב-wireframe בלי עזר?`,
+        work: `בעיקר את שתי הפאות, שני מעגלים. <code dir="ltr">auxiliaryEdge true</code> מוסיף את הקווים הרכים של הקירות, ואז הגליל נראה כמו בתמונה הראשונה.` },
+      { hint: `ומה עם המסלולים בתוך הדיסקה?`,
+        work: `ב-surface הם מאחורי המשטח, מוסתרים או מעומעמים. ב-wireframe רואים אותם עד המקום שבו הם נעצרים. התשובה: הקווים של הדיסקה נשארים, ומה שבתוכה נראה.` },
+    ],
+    onDone: () => trapFinished('c'),
+    sayRight: 'נכון. שלד, לא היעלמות.',
+    sayWrong: 'גם אני חשבתי ש-wireframe יעלים את הממיר. הוא רק מוריד את הצבע.',
+  });
+
+  const t4 = PHY.sims.visOffscreen($('t-trap4'), $('ctl-trap4'), {});
+  U.PredictCard($('pc-trap4'), {
+    chapter: CH, id: 'trap4', tag: 'מלכודת 4: תמונה צריכה מסך',
+    question: `מריצים <code dir="ltr">./ldns -m picture_30J.mac -t 1</code> על מחשב מרוחק בלי מסך, דרך ssh. מה יקרה?`,
+    options: [
+      { text: `זה ייכשל: אין חלון שאפשר לצייר בו.`, why: `TSG_OFFSCREEN לא צריך חלון: הוא מצייר לזיכרון. ועם <code dir="ltr">-m</code> ldns גם לא מנסה לפתוח ממשק גרפי.` },
+      { text: `זה יעבוד: TSG_OFFSCREEN מצייר לזיכרון, והתמונה נכתבת לקובץ.`, correct: true },
+      { text: `זה יעבוד רק עם <code dir="ltr">-u</code>, שפותח את החלון.`, why: `להפך: <code dir="ltr">-u</code> פותח חלון Qt, ובלי מסך אין לו איפה להיפתח. בשביל מחשב בלי מסך משתמשים ב-<code dir="ltr">-m</code>.` },
+    ],
+    onRun: () => t4.play(5),
+    steps: [
+      { hint: `מה ldns עושה כשיש מאקרו אחרי <code dir="ltr">-m</code>?`,
+        work: `לא יוצר <code dir="ltr">G4UIExecutive</code>, ולכן לא פותח ממשק גרפי. הוא מריץ את המאקרו ויוצא.` },
+      { hint: `איפה <code dir="ltr">TSG_OFFSCREEN</code> מצייר?`,
+        work: `לזיכרון, בגודל שנתנו: 1600 על 1000 פיקסלים. אין חלון ואין צורך במסך.` },
+      { hint: `ואיך התמונה יוצאת?`,
+        work: `<code dir="ltr">/vis/tsg/export zb_png</code> כותב אותה לקובץ PNG. התשובה: זה יעבוד, וכך נוצרו שתי התמונות של הפרק.` },
+    ],
+    onDone: () => trapFinished('d'),
+    sayRight: 'נכון. ציור לזיכרון, תמונה לקובץ.',
+    sayWrong: 'גם אני חשבתי שבלי מסך אין תמונה. יש, בלי חלון.',
+  });
+
+  /* ---------- 11. Problems ---------- */
+  const probs = $('problems-host');
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 1: כמה ירוקים בחלון',
+    text: `ב-vis_30J.mac המקור הוא התערובת האמיתית, analog מ-0.5 MeV, והמסנן מעביר פרוטונים ונייטרונים. בירייה יש \\(1.28\\times10^{12}\\) פרוטונים מעל 0.5 MeV ויוצאים \\(1.97\\times10^{8}\\) נייטרונים. כמה מסלולי נייטרונים צפויים בממוצע מ-<code dir="ltr">/run/beamOn 10000</code>, ומה הסיכוי שלא יופיע אף אחד?`,
+    fields: [
+      { label: 'ממוצע', answer: 1.54, unit: '' },
+      { label: 'סיכוי לאפס', answer: 21.4, unit: '%' },
+    ],
+    steps: [
+      { hint: `כמה נייטרונים יש לכל פרוטון?`,
+        work: `\\(1.97\\times10^{8}/1.28\\times10^{12} = 1.54\\times10^{-4}\\) נייטרונים לפרוטון.` },
+      { hint: `וכמה ב-10000 פרוטונים?`,
+        work: `\\(10^{4}\\cdot 1.54\\times10^{-4} = 1.54\\) מסלולים בממוצע.` },
+      { hint: `איזו התפלגות יש לספירה של אירועים נדירים, ומה הסיכוי לאפס בה?`,
+        work: `פואסון: \\(P(0) = e^{-\\mu} = e^{-1.54} = 0.214\\). התשובה: 1.54 בממוצע, וסיכוי של 21.4% לתמונה בלי אף נייטרון.` },
+    ],
+  });
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 2: איזה Emin לתמונה',
+    text: `רוצים תמונה עם נייטרון אחד לכל 600 פרוטונים שנורים, במקום אחד לכל 6500. נניח שהעלאת Emin לא מאבדת נייטרונים: 98% מהם נולדים מפרוטונים מעל 3 MeV. כמה פרוטונים לירייה מותר להשאיר מעל ה-Emin החדש, ואיזה חלק זה מהפרוטונים מעל 0.5 MeV?`,
+    fields: [
+      { label: 'פרוטונים לירייה', answer: 1.18, unit: '×10¹¹' },
+      { label: 'החלק', answer: 9.2, unit: '%' },
+    ],
+    steps: [
+      { hint: `כמה נייטרונים יוצאים בירייה, אם אף אחד לא הולך לאיבוד?`,
+        work: `כמו קודם: \\(1.97\\times10^{8}\\) לירייה.` },
+      { hint: `אם כל 600 פרוטונים נותנים נייטרון אחד, כמה פרוטונים צריך?`,
+        work: `\\(600\\cdot 1.97\\times10^{8} = 1.18\\times10^{11}\\) פרוטונים לירייה מעל ה-Emin החדש.` },
+      { hint: `ואיזה חלק זה מ-\\(1.28\\times10^{12}\\)?`,
+        work: `\\(1.18\\times10^{11}/1.28\\times10^{12} = 0.092\\), כלומר 9.2%. החציון של האנרגיות שמייצרות נייטרונים הוא 6.3 MeV, ולכן Emin בין 3 ל-6 MeV מתאים: בתמונה של הפרויקט הוא 5 MeV. התשובה: \\(1.18\\times10^{11}\\) פרוטונים, 9.2% מהפרוטונים מעל 0.5 MeV.` },
+    ],
+  });
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 3: מבט מהצד השני',
+    text: `רוצים מבט מהצד, עם ציר y למעלה, שבו הקרן זורמת על המסך מימין לשמאל. מה ה-viewpointVector? (שלושה רכיבים)`,
+    fields: [
+      { label: 'x', answer: 1, unit: '', abs: 0.01 },
+      { label: 'y', answer: 0, unit: '', abs: 0.01 },
+      { label: 'z', answer: 0, unit: '', abs: 0.01 },
+    ],
+    steps: [
+      { hint: `הווקטור מצביע מהמטרה אל המצלמה, או מהמצלמה אל המטרה?`,
+        work: `מהמטרה אל המצלמה. מבט מהצד עם y למעלה הוא מצלמה על ציר x: \\((\\pm1, 0, 0)\\).` },
+      { hint: `איזה סימן שולח את +z שמאלה?`,
+        work: `הכיוון ימינה במסך הוא \\(\\hat y\\times\\hat v\\). עם \\(\\hat v = (1,0,0)\\): \\((0,1,0)\\times(1,0,0) = (0,0,-1)\\). ימינה זה -z, ולכן +z, הקרן, זורמת שמאלה.` },
+      { hint: `ומה נותן הסימן השני?`,
+        work: `\\(\\hat v = (-1,0,0)\\) נותן +z ימינה: המבט של <code dir="ltr">snapshot.mac</code>, משמאל לימין. התשובה: <code dir="ltr">1 0 0</code>, כלומר x = 1, y = 0, z = 0.` },
+    ],
+  });
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 4: מה אומר 70 20',
+    text: `ב-vis.mac של ldns מופיעה השורה <code dir="ltr">/vis/viewer/set/viewpointThetaPhi 70 20 deg</code>. מה הרכיבים x ו-z של וקטור המבט?`,
+    fields: [
+      { label: 'x', answer: 0.883, unit: '' },
+      { label: 'z', answer: 0.342, unit: '' },
+    ],
+    steps: [
+      { hint: `איך θ ו-φ נהפכים לווקטור?`,
+        work: `\\(\\hat v = (\\sin\\theta\\cos\\varphi,\\ \\sin\\theta\\sin\\varphi,\\ \\cos\\theta)\\): θ מציר z, ו-φ סביבו מציר x.` },
+      { hint: `נציב \\(\\theta = 70°\\) ו-\\(\\varphi = 20°\\).`,
+        work: `\\(x = \\sin 70°\\cos 20° = 0.940\\cdot 0.940 = 0.883\\), \\(y = \\sin 70°\\sin 20° = 0.321\\), \\(z = \\cos 70° = 0.342\\).` },
+      { hint: `ומה זה אומר על התמונה?`,
+        work: `המצלמה בצד של x החיובי, קצת למעלה וקצת מאחורי הדיסקה. הכיוון ימינה הוא \\(\\hat y\\times\\hat v\\), עם רכיב z שלילי, ולכן הקרן זורמת על המסך מימין לשמאל. התשובה: x = 0.883 ו-z = 0.342.` },
+    ],
+  });
+  U.Problem(probs, {
+    chapter: CH, section: 'problems', tag: 'שאלה 5: כמה אירועים לתמונה',
+    text: `רוצים תמונה עם 100 מסלולי נייטרונים בממוצע. כמה פרוטונים צריך להריץ מהתערובת האמיתית, analog מ-0.5 MeV, וכמה עם המקור של ריצת ה-Be, flat מ-1.85 MeV, שבו יצאו 6126 מסלולים מ-\\(3\\times10^{6}\\) פרוטונים?`,
+    fields: [
+      { label: 'analog', answer: 6.5, unit: '×10⁵' },
+      { label: 'flat', answer: 4.9, unit: '×10⁴' },
+    ],
+    steps: [
+      { hint: `כמה מסלולי נייטרונים יש לפרוטון בכל מקור?`,
+        work: `analog: \\(1.54\\times10^{-4}\\), משאלה 1. flat: \\(6126/3\\times10^{6} = 2.04\\times10^{-3}\\).` },
+      { hint: `כמה פרוטונים בשביל 100?`,
+        work: `analog: \\(100/1.54\\times10^{-4} = 6.5\\times10^{5}\\). flat: \\(100/2.04\\times10^{-3} = 4.9\\times10^{4}\\).` },
+      { hint: `ומה זה עולה בזמן ובזיכרון?`,
+        work: `פי 13 פחות אירועים עם flat, ופי 13 פחות מסלולי פרוטונים לשמור, אם לא משתמשים ב-<code dir="ltr">mode hard</code>. התשובה: \\(6.5\\times10^{5}\\) פרוטונים מהתערובת האמיתית, או \\(4.9\\times10^{4}\\) עם flat.` },
+    ],
+  });
+
+  /* ---------- 12. Quiz ---------- */
+  U.Quiz($('quiz-host'), {
+    chapter: CH, section: 'quiz',
+    questions: [
+      {
+        type: 'mc',
+        q: `איזו פקודה נותנת מבט מהצד, עם הקרן משמאל לימין?`,
+        options: [`<code dir="ltr">/vis/viewer/set/style wireframe</code>`, `<code dir="ltr">/vis/viewer/zoomTo 1.3</code>`, `<code dir="ltr">/vis/viewer/set/viewpointVector -1 0 0</code>`, `<code dir="ltr">/vis/scene/add/axes 0 0 0 10 mm</code>`],
+        answer: 2,
+        steps: [
+          { hint: `איזו פקודה קובעת מאיפה מסתכלים?`,
+            work: `<code dir="ltr">viewpointVector</code>: הכיוון מהמטרה אל המצלמה. השאר קובעות סגנון, זום וצירים.` },
+          { hint: `איזה סימן?`,
+            work: `<code dir="ltr">-1 0 0</code>: המצלמה ב-x השלילי, ו-+z יוצא ימינה. התשובה: <code dir="ltr">/vis/viewer/set/viewpointVector -1 0 0</code>.` },
+        ],
+      },
+      {
+        type: 'mc',
+        q: `מה עושה <code dir="ltr">/vis/filtering/trajectories/mode hard</code>?`,
+        options: [`משנה את הפיזיקה: רק החלקיקים במסנן מסומלצים`, `מסלול שהמסנן פסל לא נשלח למערכת הציור, וזה חוסך זיכרון`, `מצייר את הקווים עבים יותר`, `מסתיר את הגיאומטריה`],
+        answer: 1,
+        steps: [
+          { hint: `מה קורה למסלול שנפסל במצב soft, ברירת המחדל?`,
+            work: `הוא נשלח למערכת הציור ומסומן כבלתי נראה.` },
+          { hint: `ומה משתנה ב-hard?`,
+            work: `הוא לא נשלח בכלל. הפיזיקה לא משתנה, רק מה שנשמר לציור. התשובה: מסלול שנפסל לא נשלח, וזה חוסך זיכרון.` },
+        ],
+      },
+      {
+        type: 'mc',
+        q: `עם <code dir="ltr">/vis/viewer/set/viewpointThetaPhi 90 0 deg</code>, לאן זורמת הקרן על המסך?`,
+        options: [`ימינה`, `שמאלה`, `לתוך המסך`, `למעלה`],
+        answer: 1,
+        steps: [
+          { hint: `מה וקטור המבט?`,
+            work: `\\((\\sin 90°\\cos 0°, \\sin 90°\\sin 0°, \\cos 90°) = (1, 0, 0)\\): המצלמה ב-x החיובי.` },
+          { hint: `מה הכיוון ימינה במסך?`,
+            work: `\\(\\hat y\\times\\hat v = (0,1,0)\\times(1,0,0) = (0,0,-1)\\): ימינה זה -z, ולכן הקרן, +z, זורמת שמאלה. התשובה: שמאלה.` },
+        ],
+      },
+      {
+        type: 'mc',
+        q: `מה אפשר לבדוק בעזרת תמונה של Geant4?`,
+        options: [`את מספר הנייטרונים לפרוטון`, `את ספקטרום האנרגיה של הנייטרונים`, `שהגיאומטריה והקרן במקום: הקונוס בדיסקה, הכיוון, סדר השכבות`, `את החלק של הנייטרונים שיוצאים קדימה`],
+        answer: 2,
+        steps: [
+          { hint: `מה התמונה לא יודעת על הנייטרונים שהיא מציירת?`,
+            work: `את המשקלים שלהם, ואת מה שהמקור והמסנן השמיטו. לכן היא לא מתאימה למספרים.` },
+          { hint: `אז בשביל מה היא כן?`,
+            work: `לבדוק בעין שהגיאומטריה והקרן במקום. התשובה: שהגיאומטריה והקרן במקום.` },
+        ],
+      },
+      {
+        type: 'num',
+        q: `הקונוס של המקור בחצי זווית של \\(20°\\), והפאה הקדמית של הדיסקה ב-45 mm. מה רדיוס הקונוס על הפאה, ב-mm?`,
+        answer: 16.4, unit: 'mm',
+        steps: [
+          { hint: `באיזה מרחק מהציר עובר פרוטון בזווית θ, אחרי מרחק z לאורך הציר?`,
+            work: `\\(r = z\\tan\\theta\\).` },
+          { hint: `נציב.`,
+            work: `\\(45\\ \\text{mm}\\cdot\\tan 20° = 45\\cdot 0.364 = 16.4\\ \\text{mm}\\), פחות מהרדיוס של הדיסקה, 22 mm. התשובה: 16.4 mm.` },
+        ],
+      },
+      {
+        type: 'num',
+        q: `<span class="chip">חזרה מפרק 1</span> ספירה מתפלגת לפי פואסון עם תוחלת 1.54. מה הסיכוי לספור אפס, באחוזים?`,
+        answer: 21.4, unit: '%',
+        steps: [
+          { hint: `מה ההסתברות לאפס בהתפלגות פואסון?`,
+            work: `\\(P(0) = e^{-\\mu}\\).` },
+          { hint: `נציב.`,
+            work: `\\(e^{-1.54} = 0.214\\), כלומר 21.4%.` },
+        ],
+      },
+      {
+        type: 'mc',
+        q: `<span class="chip">חזרה מפרק 2</span> הקווים שהצופה מצייר אחרי הריצה הם:`,
+        options: [`ה-tracks עצמם, החלקיקים בזמן שהם מועברים`, `trajectories: הרשומה ש-Geant4 שמר לכל track, נקודה אחרי נקודה`, `ה-steps של החלקיק הראשוני בלבד`, `הנפחים הפיזיים שהחלקיק עבר בהם`],
+        answer: 1,
+        steps: [
+          { hint: `מה קורה ל-track כשהוא נגמר?`,
+            work: `הוא נמחק: Geant4 משחרר אותו ועובר לבא בתור.` },
+          { hint: `אז מה נשאר לציור?`,
+            work: `ה-trajectory: רשומה עם נקודה בסוף כל צעד, שנשמרת עם האירוע. התשובה: trajectories.` },
+        ],
+      },
+    ],
+  });
+
+  U.initChapter({ id: CH });
+})();
+</script>
+</body>
+</html>
